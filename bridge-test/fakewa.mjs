@@ -168,6 +168,13 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     },
     WAWebOfflineHandler: { OfflineMessageHandler: { getOfflineDeliveryProgress: () => 42 } },
     WAWebAddonReactionTableMode: { reactionTableMode: { bulkUpsert: (list) => list.length } },
+    WAWebPresenceChatAction: {
+      sent: 0,
+      sendPresenceUnavailable() {
+        this.sent++;
+        return Promise.resolve();
+      },
+    },
   };
 
   class FileReader {
@@ -184,7 +191,12 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     Debug: undefined,
     setTimeout,
     clearTimeout,
-    setInterval,
+    // The bridge keeps some intervals for the page's lifetime; they must not keep the test process alive.
+    setInterval: (...a) => {
+      const t = setInterval(...a);
+      t.unref();
+      return t;
+    },
     clearInterval,
     Blob,
     FileReader,

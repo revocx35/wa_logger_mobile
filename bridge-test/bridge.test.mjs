@@ -90,6 +90,8 @@ test('hasSynced → authenticated → ready with the own account', async () => {
   const ready = env.posted.findIndex((m) => m.t === 'ready');
   assert.ok(auth >= 0 && ready > auth);
   assert.deepEqual(env.posted[ready].me, { id: '905550000001@c.us', lid: '111@lid', name: 'Owner' });
+  // The hidden session must not show the owner as online.
+  assert.equal(env.modules.WAWebPresenceChatAction.sent, 1);
   // Placeholder resend (undecryptable messages) is enabled, as in whatsapp-web.js.
   assert.equal(env.modules.WAWebSyncGatingUtils.isPlaceholderMessageResendEnabled(), true);
 });

@@ -228,7 +228,8 @@ class WaEngine(
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    // The WebView features are checked in start() before any WebView is created.
+    @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
     private fun create() {
         val gen = ++generation
         destroyWebView()
@@ -308,10 +309,12 @@ class WaEngine(
         w.isFocusableInTouchMode = true
     }
 
-    /** Debug builds only: serve the fake WhatsApp Web of src/debug/assets/fakewa (scripts/e2e.py). */
+    /** Test builds only (debug, e2e): serve the fake WhatsApp Web of src/debug/assets/fakewa (scripts/e2e.py). */
     private val fakeWa: Boolean
-        get() = BuildConfig.DEBUG && context.getSharedPreferences("walm_prefs", Context.MODE_PRIVATE).getBoolean("fake_wa", false)
+        get() = BuildConfig.FAKE_WA && context.getSharedPreferences("walm_prefs", Context.MODE_PRIVATE).getBoolean("fake_wa", false)
 
+    // Lint misses the onRenderProcessGone override below in an inner class.
+    @SuppressLint("MissingOnRenderProcessGone")
     private inner class Client(private val gen: Int) : WebViewClient() {
         private val fake = fakeWa
 

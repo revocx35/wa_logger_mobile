@@ -1,0 +1,13 @@
+wa_logger mobile
+
+The WhatsApp Web integration (app/src/main/assets/walm-bridge.js) contains code adapted from whatsapp-web.js
+(https://github.com/wwebjs/whatsapp-web.js), version 1.34.7:
+  - src/Client.js (inject, requestPairingCode, attachEventListeners, setDeviceName)
+  - src/util/Injected/Utils.js (injectToFunction, getMessageModel, getChat)
+  - src/util/Injected/AuthStore/AuthStore.js
+whatsapp-web.js is licensed under the Apache License, Version 2.0; a copy is in
+third_party/whatsapp-web.js/LICENSE. The adapted code was rewritten for a WebView message port (no Puppeteer) and
+changed in the ways described in ARCHITECTURE.md §4.
+
+The user interface, data model and encryption design come from wa_logger (https://github.com/revocx35/wa_logger),
+by the same author.

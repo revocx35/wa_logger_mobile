@@ -141,6 +141,7 @@
     WAWebNonMessageDataRequestPlaceholderMessageResendUtils: { handlePlaceholderMsgsSeen: function () {} },
     WAWebOfflineHandler: { OfflineMessageHandler: { getOfflineDeliveryProgress: function () { return 100; } } },
     WAWebAddonReactionTableMode: { reactionTableMode: { bulkUpsert: function (l) { return l.length; } } },
+    WAWebPresenceChatAction: { unavailable: 0, sendPresenceUnavailable: function () { this.unavailable++; return Promise.resolve(); } },
   };
 
   var seq = 0;

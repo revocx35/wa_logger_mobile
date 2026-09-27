@@ -95,7 +95,7 @@ fun AppRoot(graph: AppGraph, openTarget: MutableStateFlow<String?>) {
             create = { ctrl.create(it) },
             unlock = { ctrl.unlock(it) },
             recover = { key, pw -> ctrl.recover(key, pw) },
-            biometric = if (bioReady) ({ Biometric.unlock(context, graph.vault) }) else null,
+            biometric = if (bioReady && Build.VERSION.SDK_INT >= 30) ({ Biometric.unlock(context, graph.vault) }) else null,
         )
     }
 

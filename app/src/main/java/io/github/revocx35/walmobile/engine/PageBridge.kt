@@ -86,6 +86,7 @@ class PageBridge(scope: CoroutineScope, private val onMessage: suspend (page: In
     val connected: Boolean get() = proxy != null
 
     /** Runs `op` in the page; throws [PageError] (page error, reload, timeout). */
+    @android.annotation.SuppressLint("RequiresFeature") // only reachable after WaEngine.start() checked the feature
     suspend fun call(op: String, args: JsonObject = JsonObject(emptyMap()), timeoutMs: Long = 60_000): JsonElement {
         val p = proxy ?: throw PageError("WhatsApp Web is not loaded")
         val id = nextId.getAndIncrement()

@@ -362,6 +362,28 @@
       note('hook failed: ' + (e && e.message));
     }
     post({ t: 'ready', me: meInfo() });
+    stayOffline();
+  }
+
+  /**
+   * The hidden page counts as "visible" for Chromium, and WhatsApp Web could then show the owner as online
+   * around the clock. Send "unavailable" presence after linking and every few minutes, except while the
+   * owner is using the page on screen.
+   */
+  var shownOnScreen = false;
+  function stayOffline() {
+    var send = function () {
+      if (shownOnScreen) return;
+      var P = tryReq('WAWebPresenceChatAction');
+      if (!P || typeof P.sendPresenceUnavailable !== 'function') return;
+      try {
+        Promise.resolve(P.sendPresenceUnavailable()).catch(function () {});
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    send();
+    T.every(send, 4 * 60000);
   }
 
   /* ------------------------------------------------------- events */
@@ -803,6 +825,7 @@
       }
       if (!meta.dataset.walmOrig) meta.dataset.walmOrig = meta.content || 'width=device-width';
       meta.content = args.width > 0 ? 'width=' + (args.width | 0) + ',user-scalable=yes' : meta.dataset.walmOrig;
+      shownOnScreen = args.width > 0;
       return true;
     },
 

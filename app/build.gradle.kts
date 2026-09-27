@@ -39,17 +39,32 @@ android {
 
     buildTypes {
         release {
-            // R8 is off until release builds can be checked on a device/emulator: minified code differs
-            // from what the tests run (e.g. reflective serializer lookups for navigation routes), and 0.1.0
-            // showed release-only problems can't be caught here. Re-enable with proguard-rules.pro then.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 shrinks and optimizes (no renaming, see proguard-rules.pro). Minified code can fail where the
+            // tests pass, so the same code is checked on the emulator through the e2e build type below.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
+            buildConfigField("boolean", "FAKE_WA", "false")
         }
         debug {
             applicationIdSuffix = ".debug"
+            buildConfigField("boolean", "FAKE_WA", "true")
         }
+        // Minified exactly like release, plus the fake WhatsApp Web of src/debug/assets, so scripts/e2e.py can
+        // exercise R8's output. Debuggable (run-as, DevTools) and signed with the debug key; never distributed.
+        create("e2e") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".e2e"
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            buildConfigField("boolean", "FAKE_WA", "true")
+        }
+    }
+
+    sourceSets {
+        getByName("e2e").assets.srcDir("src/debug/assets")
     }
 
     compileOptions {

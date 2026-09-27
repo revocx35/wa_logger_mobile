@@ -5,6 +5,7 @@ import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
 import android.os.CancellationSignal
+import androidx.annotation.RequiresApi
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
@@ -37,6 +38,7 @@ object Biometric {
 
     private fun keyStore() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
+    @RequiresApi(30)
     private fun newKey(): SecretKey {
         val ks = keyStore()
         if (ks.containsAlias(ALIAS)) ks.deleteEntry(ALIAS)
@@ -47,7 +49,7 @@ object Biometric {
             .setKeySize(256)
             .setUserAuthenticationRequired(true)
             .setInvalidatedByBiometricEnrollment(true)
-        if (Build.VERSION.SDK_INT >= 30) spec.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
+            .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
         g.init(spec.build())
         return g.generateKey()
     }
@@ -56,6 +58,7 @@ object Biometric {
         runCatching { keyStore().deleteEntry(ALIAS) }
     }
 
+    @RequiresApi(30)
     private suspend fun prompt(context: Context, cipher: Cipher, title: String, subtitle: String): Cipher = suspendCancellableCoroutine { cont ->
         val cancel = CancellationSignal()
         cont.invokeOnCancellation { cancel.cancel() }
@@ -66,7 +69,7 @@ object Biometric {
             .setNegativeButton("Use password", executor) { _, _ ->
                 if (cont.isActive) cont.resumeWithException(ApiException(400, "cancelled", "Cancelled."))
             }
-        if (Build.VERSION.SDK_INT >= 30) builder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+        builder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
         builder.build().authenticate(BiometricPrompt.CryptoObject(cipher), cancel, executor, object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 val c = result.cryptoObject?.cipher
@@ -81,6 +84,7 @@ object Biometric {
     }
 
     /** Wraps the private key of the unlocked vault after a biometric check, and stores it. */
+    @RequiresApi(30)
     suspend fun enable(context: Context, vault: Vault) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, newKey())
@@ -101,6 +105,7 @@ object Biometric {
     }
 
     /** Unlocks with a biometric check; throws when cancelled or when the key was invalidated. */
+    @RequiresApi(30)
     suspend fun unlock(context: Context, vault: Vault) {
         val blob = vault.biometricBlob() ?: throw ApiException(400, "unavailable", "Fingerprint unlock is not set up.")
         val key = keyStore().getKey(ALIAS, null) as? SecretKey

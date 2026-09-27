@@ -186,7 +186,7 @@ private fun UnlockSection(d: SettingsDeps) {
         if (available || hasBio == true) {
             SwitchRow(hasBio == true, { on ->
                 op.run(if (on) "Fingerprint unlock is on." else "Fingerprint unlock is off.") {
-                    if (on) Biometric.enable(context, graph!!.vault) else Biometric.disable(graph!!.vault)
+                    if (on && Build.VERSION.SDK_INT >= 30) Biometric.enable(context, graph!!.vault) else Biometric.disable(graph!!.vault)
                     hasBio = on
                 }
             }, "Unlock with fingerprint or face", enabled = !op.busy)
@@ -197,7 +197,7 @@ private fun UnlockSection(d: SettingsDeps) {
         OkNote(op.ok)
         Text("Lock the app", style = WaType.base.copy(fontWeight = FontWeight.Medium), color = Wa.colors.text)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for ((m, label) in listOf(0 to "At once", 1 to "After 1 min", 5 to "After 5 min", 15 to "After 15 min", 60 to "After 1 hour", -1 to "Only on restart")) {
+            for ((m, label) in listOf(0 to "At once", 1 to "After 1 min", 5 to "After 5 min", 15 to "After 15 min", 60 to "After 1 hour", -1 to "Never")) {
                 FilterChip(label, autoLock == m) { graph?.prefs?.setAutoLockMinutes(m) }
             }
         }

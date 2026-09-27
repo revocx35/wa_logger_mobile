@@ -66,6 +66,8 @@ class WaService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
+    /** Opt-in (Settings → Background) and held until switched off or the service stops: no timeout on purpose. */
+    @android.annotation.SuppressLint("WakelockTimeout", "Wakelock")
     private fun setWakeLock(on: Boolean) {
         if (on && wakeLock == null) {
             wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "walm:logger").apply {

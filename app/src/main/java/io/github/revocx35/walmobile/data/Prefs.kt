@@ -28,7 +28,7 @@ class Prefs(context: Context) {
     val notifyDeleted: StateFlow<Boolean> = _notifyDeleted.asStateFlow()
 
     private val _autoLockMinutes = MutableStateFlow(sp.getInt(KEY_AUTOLOCK, 5))
-    /** Lock the app this long after it leaves the screen (0 = at once, -1 = only when the process ends). */
+    /** Lock the app this long after it leaves the screen (0 = at once, -1 = never while the app process runs). */
     val autoLockMinutes: StateFlow<Int> = _autoLockMinutes.asStateFlow()
 
     fun setSecureScreen(on: Boolean) = set(KEY_SECURE_SCREEN, on, _secureScreen)
