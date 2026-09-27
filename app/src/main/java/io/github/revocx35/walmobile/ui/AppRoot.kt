@@ -117,7 +117,8 @@ fun AppRoot(graph: AppGraph, openTarget: MutableStateFlow<String?>) {
     }
 
     // A crash or "not responding" since the last start: offer the report (stays on the phone unless copied).
-    var report by remember { mutableStateOf(graph.diagnostics.unseen()) }
+    var report by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { report = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { graph.diagnostics.unseen() } }
     report?.let {
         io.github.revocx35.walmobile.ui.components.ReportDialog(
             "wa_logger stopped unexpectedly",

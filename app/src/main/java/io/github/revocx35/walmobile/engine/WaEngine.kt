@@ -448,7 +448,7 @@ class WaEngine(
     }
 
     fun refreshQr() {
-        scope.launch { runCatching { bridge.call("refreshQr", timeoutMs = 15_000) } }
+        scope.launch(Dispatchers.IO) { runCatching { bridge.call("refreshQr", timeoutMs = 15_000) } }
     }
 
     /** "Link with phone number": returns the 8-character code to type into WhatsApp on the phone. */
@@ -476,7 +476,7 @@ class WaEngine(
         wrapper?.baseContext = activity
         (w.parent as? ViewGroup)?.removeView(w)
         // WhatsApp Web's desktop layout is wider than a phone: lay it out wide and let the WebView zoom out.
-        scope.launch { runCatching { bridge.call("setViewport", args("width" to LIVE_VIEW_WIDTH), 10_000) } }
+        scope.launch(Dispatchers.IO) { runCatching { bridge.call("setViewport", args("width" to LIVE_VIEW_WIDTH), 10_000) } }
         return w
     }
 
@@ -535,11 +535,13 @@ class WaEngine(
     private fun onSocketState(state: String?) {
         lastSocketState = state
         when (state) {
-            "UNPAIRED", "UNPAIRED_IDLE" -> {
-                if (_status.value.state in linkedStates) onLoggedOut()
-                else if (_status.value.state != WaState.Disconnected) setState(WaState.Qr, "Waiting for you to link WhatsApp")
+            "UNPAIRED", "UNPAIRED_IDLE" -> when {
+                // Linked before (now, or before the app restarted): WhatsApp unlinked this device.
+                _status.value.state in linkedStates || wasLinked() -> onLoggedOut()
+                _status.value.state != WaState.Disconnected -> setState(WaState.Qr, "Waiting for you to link WhatsApp")
             }
-            "OPENING", "PAIRING" -> if (_status.value.state !in linkedStates && _status.value.state != WaState.Qr) setState(WaState.Authenticating, "Connecting…")
+            // "Disconnected" stays until the owner links again (the UI treats it like "not linked").
+            "OPENING", "PAIRING" -> if (_status.value.state !in linkedStates && _status.value.state != WaState.Qr && _status.value.state != WaState.Disconnected) setState(WaState.Authenticating, "Connecting…")
             "CONNECTED" -> if (_status.value.state !in linkedStates) setState(WaState.Authenticating, "Connected, loading chats…")
             "CONFLICT" -> setState(_status.value.state, "WhatsApp Web was opened elsewhere; taking it back…")
             "TIMEOUT" -> if (_status.value.state in linkedStates) setState(_status.value.state, "Reconnecting to WhatsApp…")
@@ -548,6 +550,9 @@ class WaEngine(
         }
         if (state == "CONNECTED" && _status.value.detail == "Reconnecting to WhatsApp…") setState(_status.value.state, null)
     }
+
+    /** The account this app was linked to is still recorded (cleared when an unlink is noticed). */
+    private fun wasLinked(): Boolean = runCatching { repo.getState(Presenter.STATE_WA_ME) != null }.getOrDefault(false)
 
     private fun onLoggedOut() {
         stopTimers()
@@ -600,7 +605,8 @@ class WaEngine(
         withContext(Dispatchers.IO) { media.restorePending() }
         val gen = generation
         startTimers(gen, page)
-        scope.launch {
+        // Sync and avatars touch the database: keep them off the app scope's main dispatcher.
+        scope.launch(Dispatchers.IO) {
             try {
                 if (firstSync) sync.initial() else periodicSync()
             } catch (e: Exception) {
@@ -635,14 +641,14 @@ class WaEngine(
 
     private fun startTimers(gen: Int, page: Int) {
         stopTimers()
-        timers += scope.launch {
+        timers += scope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(RECONCILE_MS)
                 if (gen != generation || page != readyPage) break
                 if (_status.value.state == WaState.Ready) runCatching { periodicSync() }
             }
         }
-        timers += scope.launch {
+        timers += scope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(AVATAR_INTERVAL_MS)
                 if (gen != generation || page != readyPage) break
@@ -662,7 +668,7 @@ class WaEngine(
     private fun startWatchdog(gen: Int) {
         watchdog?.cancel()
         watchdogFailures = 0
-        watchdog = scope.launch {
+        watchdog = scope.launch(Dispatchers.IO) {
             var sinceLoad = 0L
             while (isActive && gen == generation) {
                 delay(WATCHDOG_INTERVAL_MS)

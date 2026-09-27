@@ -25,7 +25,7 @@ class Diagnostics(private val context: Context) {
             runCatching { write("crash", "Crash on thread \"${thread.name}\"\n\n" + describe(error)) }
             previous?.uncaughtException(thread, error)
         }
-        runCatching { collectAnrs() }
+        Thread { runCatching { collectAnrs() } }.start()
     }
 
     /** A failure that was caught (the app kept running) but should not have happened. */

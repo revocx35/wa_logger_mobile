@@ -11,8 +11,12 @@ class WaLoggerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Debug builds: log disk and network access on the main thread (scripts/e2e.py runs with this on).
+        if (BuildConfig.DEBUG) {
+            android.os.StrictMode.setThreadPolicy(android.os.StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites().detectNetwork().penaltyLog().build())
+        }
         val diagnostics = Diagnostics(this).also { it.install() }
-        MediaOps.cleanup(this)
+        Thread { MediaOps.cleanup(this) }.start()
         graph = AppGraph(this, diagnostics)
     }
 }

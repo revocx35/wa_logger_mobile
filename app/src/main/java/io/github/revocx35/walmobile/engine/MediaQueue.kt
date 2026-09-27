@@ -8,6 +8,7 @@ import io.github.revocx35.walmobile.store.Repo
 import io.github.revocx35.walmobile.store.SettingsStore
 import io.github.revocx35.walmobile.store.values
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -101,7 +102,8 @@ class MediaQueue(
                 running++
                 next
             }
-            scope.launch {
+            // Database, file and crypto work: never on the (main-thread) app scope's default dispatcher.
+            scope.launch(Dispatchers.IO) {
                 try {
                     process(id)
                 } finally {
