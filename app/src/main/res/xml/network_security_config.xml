@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS only, system CAs only: WhatsApp Web and its CDNs are all HTTPS, and a CA someone adds to the
+  phone must not be able to read private messages.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
