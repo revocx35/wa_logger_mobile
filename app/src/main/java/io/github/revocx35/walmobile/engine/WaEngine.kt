@@ -195,7 +195,6 @@ class WaEngine(
     private fun setState(state: WaState, detail: String? = null) {
         val cur = _status.value
         if (cur.state == state && cur.detail == detail) return
-        if (cur.state != state) audit("wa_" + state.name.lowercase(), detail)
         publish(cur.copy(state = state, detail = detail, since = System.currentTimeMillis(), mediaQueue = media.size()))
     }
 
@@ -381,6 +380,7 @@ class WaEngine(
     private fun scheduleReload(gen: Int, reason: String) {
         if (gen != generation) return
         val wait = minOf(5_000L shl minOf(attempt, 4), 60_000L)
+        if (attempt == 0) audit("wa_reload", reason)
         attempt++
         media.pause()
         setState(WaState.Error, "$reason. Retrying in ${wait / 1000}s")
@@ -511,7 +511,9 @@ class WaEngine(
             "state" -> onSocketState(msg.str("state"))
             "qr" -> {
                 _qr.value = msg.str("qr")
-                if (_status.value.state !in linkedStates) setState(WaState.Qr, "Waiting for you to link WhatsApp")
+                // After an unlink the state stays "disconnected" (it raises the alert) until the owner relinks.
+                val st = _status.value.state
+                if (st !in linkedStates && st != WaState.Disconnected) setState(WaState.Qr, "Waiting for you to link WhatsApp")
             }
             "loading" -> msg.num("percent")?.let { p ->
                 if (_status.value.state !in linkedStates) setState(WaState.Authenticating, "Loading chats ${p.toInt()}%")

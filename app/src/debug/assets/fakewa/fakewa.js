@@ -199,12 +199,18 @@
     state: function () { return Socket.state; },
     /** Simulates scanning the QR code / entering the pairing code. */
     link: function () {
+      try {
+        localStorage.setItem('fake_linked', '1');
+      } catch (e) {}
       setState('OPENING');
       setTimeout(function () { setState('CONNECTED'); }, 300);
       setTimeout(function () { Socket.hasSynced = true; Socket.emit('change:hasSynced'); }, 800);
       return 'linking';
     },
     unlink: function () {
+      try {
+        localStorage.removeItem('fake_linked');
+      } catch (e) {}
       Socket.hasSynced = false;
       Cmd.emit('logout');
       setState('UNPAIRED');
@@ -277,6 +283,18 @@
       if (!(name in modules)) throw new Error('Requiring unknown module "' + name + '"');
       return modules[name];
     };
-    setTimeout(function () { setState('UNPAIRED'); }, 500);
+    // Like WhatsApp Web, a linked session reconnects by itself after a reload.
+    var linked = false;
+    try {
+      linked = localStorage.getItem('fake_linked') === '1';
+    } catch (e) {}
+    setTimeout(function () {
+      if (linked) {
+        window.fake.seed();
+        window.fake.link();
+      } else {
+        setState('UNPAIRED');
+      }
+    }, 500);
   }, 800);
 })();

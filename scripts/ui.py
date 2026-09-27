@@ -126,6 +126,15 @@ class Ui:
         time.sleep(0.3)
         self.type_text(value)
 
+    def clear_field(self, label):
+        """Focuses the field after [label] and deletes its content (select all + delete)."""
+        n = self.field_after(label)
+        self.shell("input tap %d %d" % self.center(n))
+        time.sleep(0.3)
+        self.shell("input keycombination KEYCODE_CTRL_LEFT KEYCODE_A")
+        self.shell("input keyevent KEYCODE_DEL")
+        time.sleep(0.2)
+
     def type_text(self, value):
         # `input text` needs spaces as %s and some characters escaped.
         esc = value.replace("%", "\\%").replace(" ", "%s").replace("'", "\\'").replace('"', '\\"').replace("&", "\\&").replace("(", "\\(").replace(")", "\\)").replace("<", "\\<").replace(">", "\\>").replace(";", "\\;").replace("|", "\\|")
