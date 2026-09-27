@@ -35,8 +35,17 @@
   function sleep(ms) {
     return new Promise(function (r) { T.set(r, ms); });
   }
+  /** Races [p] against a timer (WhatsApp's own calls can wait forever); the timer is always cleared. */
   function within(p, ms) {
-    return Promise.race([p, sleep(ms).then(function () { return TIMEOUT; })]);
+    var timer;
+    var limit = new Promise(function (r) {
+      timer = T.set(function () {
+        r(TIMEOUT);
+      }, ms);
+    });
+    return Promise.race([p, limit]).finally(function () {
+      T.clear(timer);
+    });
   }
 
   function post(obj) {
@@ -247,7 +256,8 @@
         req('WAWebUserPrefsMultiDevice').getADVSecretKey(),
         RU.DEVICE_PLATFORM,
       ].join(',');
-      post({ t: 'qr', qr: qr });
+      // What WhatsApp Web itself encodes now: a link, so a phone's camera app opens WhatsApp directly.
+      post({ t: 'qr', qr: 'https://wa.me/settings/linked_devices#' + qr });
     })()
       .catch(function (e) {
         note('qr failed: ' + (e && e.message));
@@ -781,6 +791,19 @@
       P.setPairingType('ALT_DEVICE_LINKING');
       await P.initializeAltDeviceLinking();
       return await P.startAltLinkingFlow(phone, args.notify !== false);
+    },
+
+    /** Lays the page out at a desktop width while it is shown on the phone's screen (0 = back to normal). */
+    setViewport: function (args) {
+      var meta = document.querySelector('meta[name=viewport]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'viewport';
+        document.head.appendChild(meta);
+      }
+      if (!meta.dataset.walmOrig) meta.dataset.walmOrig = meta.content || 'width=device-width';
+      meta.content = args.width > 0 ? 'width=' + (args.width | 0) + ',user-scalable=yes' : meta.dataset.walmOrig;
+      return true;
     },
 
     cancelPairing: async function () {

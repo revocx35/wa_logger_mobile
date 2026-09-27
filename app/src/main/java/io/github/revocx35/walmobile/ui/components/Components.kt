@@ -186,7 +186,7 @@ fun ConfirmButton(label: String, confirmLabel: String, onConfirm: () -> Unit, mo
 private val STATE_LABEL = mapOf(
     WaState.Idle to "Not started",
     WaState.Starting to "Starting",
-    WaState.Qr to "Waiting for QR scan",
+    WaState.Qr to "Not linked",
     WaState.Authenticating to "Linking",
     WaState.Syncing to "Importing history",
     WaState.Ready to "Connected",

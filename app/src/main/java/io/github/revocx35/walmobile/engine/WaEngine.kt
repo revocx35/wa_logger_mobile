@@ -309,7 +309,28 @@ class WaEngine(
         w.isFocusableInTouchMode = true
     }
 
+    /** Debug builds only: serve the fake WhatsApp Web of src/debug/assets/fakewa (scripts/e2e.py). */
+    private val fakeWa: Boolean
+        get() = BuildConfig.DEBUG && context.getSharedPreferences("walm_prefs", Context.MODE_PRIVATE).getBoolean("fake_wa", false)
+
     private inner class Client(private val gen: Int) : WebViewClient() {
+        private val fake = fakeWa
+
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
+            if (!fake || request.url.host != WA_HOST) return null
+            val path = request.url.path?.trimStart('/').orEmpty().ifEmpty { "fakewa/index.html" }
+            val type = when (path.substringAfterLast('.')) {
+                "html" -> "text/html"
+                "js" -> "application/javascript"
+                "png" -> "image/png"
+                "wav" -> "audio/wav"
+                else -> "application/octet-stream"
+            }
+            val body = if (path.startsWith("fakewa/")) runCatching { context.assets.open(path) }.getOrNull() else null
+            return if (body != null) android.webkit.WebResourceResponse(type, "utf-8", body)
+            else android.webkit.WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
             if (url.scheme == "https" && url.host == WA_HOST) return false
@@ -376,6 +397,7 @@ class WaEngine(
         media.pause()
         val w = web ?: return
         web = null
+        _borrowed.value = false
         runCatching {
             (w.parent as? ViewGroup)?.removeView(w)
             w.stopLoading()
@@ -450,6 +472,8 @@ class WaEngine(
         _borrowed.value = true
         wrapper?.baseContext = activity
         (w.parent as? ViewGroup)?.removeView(w)
+        // WhatsApp Web's desktop layout is wider than a phone: lay it out wide and let the WebView zoom out.
+        scope.launch { runCatching { bridge.call("setViewport", args("width" to LIVE_VIEW_WIDTH), 10_000) } }
         return w
     }
 
@@ -468,6 +492,8 @@ class WaEngine(
     /* ------------------------------------------------- page messages */
 
     private suspend fun onPageMessage(page: Int, msg: JsonObject) {
+        // Debug builds: message types and states only, never content.
+        if (BuildConfig.DEBUG) android.util.Log.d("walm", "page#$page ${msg.str("t")} ${msg.str("state") ?: msg.str("ev") ?: msg.str("msg")?.take(120) ?: ""}")
         when (msg.str("t")) {
             "hello" -> {
                 watchdogFailures = 0
@@ -485,7 +511,7 @@ class WaEngine(
             "state" -> onSocketState(msg.str("state"))
             "qr" -> {
                 _qr.value = msg.str("qr")
-                if (_status.value.state !in linkedStates) setState(WaState.Qr, "Scan the QR code with WhatsApp on your phone")
+                if (_status.value.state !in linkedStates) setState(WaState.Qr, "Waiting for you to link WhatsApp")
             }
             "loading" -> msg.num("percent")?.let { p ->
                 if (_status.value.state !in linkedStates) setState(WaState.Authenticating, "Loading chats ${p.toInt()}%")
@@ -506,7 +532,7 @@ class WaEngine(
         when (state) {
             "UNPAIRED", "UNPAIRED_IDLE" -> {
                 if (_status.value.state in linkedStates) onLoggedOut()
-                else if (_status.value.state != WaState.Disconnected) setState(WaState.Qr, "Scan the QR code with WhatsApp on your phone")
+                else if (_status.value.state != WaState.Disconnected) setState(WaState.Qr, "Waiting for you to link WhatsApp")
             }
             "OPENING", "PAIRING" -> if (_status.value.state !in linkedStates && _status.value.state != WaState.Qr) setState(WaState.Authenticating, "Connecting…")
             "CONNECTED" -> if (_status.value.state !in linkedStates) setState(WaState.Authenticating, "Connected, loading chats…")
@@ -643,6 +669,7 @@ class WaEngine(
                 } catch (_: PageError) {
                     null
                 }
+                if (BuildConfig.DEBUG) android.util.Log.d("walm", "watchdog ping=$r")
                 val linked = _status.value.state in linkedStates
                 val healthy = r == "ok" || (r == "loading" && !linked) || (r == null && !bridge.connected && _status.value.state == WaState.Error)
                 watchdogFailures = if (healthy) 0 else watchdogFailures + 1
@@ -694,6 +721,7 @@ class WaEngine(
         const val RECONCILE_MS = 10 * 60_000L
         const val AVATAR_INTERVAL_MS = 30 * 60_000L
         const val WATCHDOG_INTERVAL_MS = 60_000L
+        const val LIVE_VIEW_WIDTH = 960
         const val HISTORY_PASSES_KEY = "history_passes"
         const val HISTORY_CATCHUP_PASSES = 4
         const val HISTORY_CATCHUP_WINDOW_MS = 3 * 3600_000L

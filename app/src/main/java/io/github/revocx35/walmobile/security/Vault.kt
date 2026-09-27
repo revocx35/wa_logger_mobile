@@ -142,7 +142,9 @@ class Vault(private val repo: Repo, private val now: () -> Long = System::curren
     /** Checks the password; returns the unwrapped private key. Counts as an attempt. */
     private fun checkPassword(o: OwnerRow, password: String): ByteArray {
         charge(o)
+        val started = System.nanoTime()
         val keys = Kdf.passwordKeys(password, o.pwSalt, o.pwLogN)
+        if (io.github.revocx35.walmobile.BuildConfig.DEBUG) android.util.Log.d("walm", "password KDF took ${(System.nanoTime() - started) / 1_000_000} ms")
         try {
             if (!Crypto.ctEqual(keys.authHash, o.pwAuthHash)) {
                 repo.audit("unlock_failed")
