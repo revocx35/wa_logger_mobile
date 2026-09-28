@@ -9,10 +9,10 @@ server: WhatsApp Web, the logger, the encrypted database and the WhatsApp-style 
 screens look like wa_logger's web UI.
 
 <p>
-  <img src="docs/screenshots/chat.png" width="24%" alt="Chat with a deleted message still visible, an edit, a reaction, a photo and a voice note" />
-  <img src="docs/screenshots/deleted.png" width="24%" alt="Deleted messages feed" />
-  <img src="docs/screenshots/chats.png" width="24%" alt="Chat list" />
-  <img src="docs/screenshots/link.png" width="24%" alt="Linking WhatsApp with a code on the same phone" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="Chat with a deleted message still visible, an edit, a reaction, a photo and a voice note" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="Deleted messages feed" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="Chat list" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="24%" alt="Linking WhatsApp with a code on the same phone" />
 </p>
 
 _(Screenshots show demo data.)_
@@ -61,11 +61,18 @@ to the app, which stores them encrypted. Details: [ARCHITECTURE.md](ARCHITECTURE
 
 ## Install
 
+From [F-Droid](https://f-droid.org/packages/io.github.revocx35.walmobile/) (once it is published there), or from
+GitHub:
+
 1. Download `wa_logger_mobile-<version>.apk` from [Releases](https://github.com/revocx35/wa_logger_mobile/releases).
 2. Open it on the phone and allow installing from this source.
 3. Optional: check the signing certificate. Its SHA-256 is
    `A6:A8:45:C2:0C:C6:F4:3A:9C:90:5F:9B:DF:83:7A:19:D5:09:BB:86:F5:C9:E5:C1:36:60:92:43:5C:8F:37:19`
    (`apksigner verify --print-certs wa_logger_mobile-<version>.apk`). Updates are signed with the same key.
+
+F-Droid builds the app from source and publishes it only if its build is identical to the GitHub APK, so both are
+the same file with the same signature, and you can switch between them without reinstalling (reinstalling would
+delete the log).
 
 Requires Android 8.0 or newer and an up-to-date **Android System WebView** (or Chrome), which is what runs WhatsApp
 Web. Fingerprint unlock needs Android 11+.
@@ -162,6 +169,11 @@ scripts/emulator.sh start
 ./gradlew :app:assembleDebug && python3 scripts/e2e.py
 ./gradlew :app:assembleE2e && E2E_APK=app/build/outputs/apk/e2e/app-e2e.apk E2E_PKG=io.github.revocx35.walmobile.e2e python3 scripts/e2e.py
 ```
+
+## License
+
+wa_logger mobile is free software, licensed under the [GNU General Public License v3.0 or later](LICENSE)
+(GPL-3.0-or-later).
 
 ## Credits
 

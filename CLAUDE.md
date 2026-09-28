@@ -30,7 +30,8 @@ The server version is https://github.com/revocx35/wa_logger (local checkout `/ro
 - Inspect the page of a debug build: `ANDROID_SERIAL=emulator-5554 node scripts/devtools.mjs '<js expression>'`
   (state only, never read messages). The fake page is driven the same way (`fake.link()`, `fake.incoming(...)`).
 - Screenshots of a debug build: FLAG_SECURE blocks them; `ui.set_prefs(secure_screen=False, ...)` in scripts/ui.py.
-- Release: ARCHITECTURE §10. Signing key location is in Claude's project memory (not in the repo).
+- Release: ARCHITECTURE §10. Signing key location is in Claude's project memory (not in the repo). F-Droid rebuilds
+  each tag and ships the GitHub APK only if the build is reproducible: check with `apksigcopier compare` first.
 
 ## Environment gotchas (this LXC)
 - 16 GB RAM, 3 cores, ~6 GB free disk. The only AVD is the NPM Mobile project's `npm_test` (API 37); a second AVD did

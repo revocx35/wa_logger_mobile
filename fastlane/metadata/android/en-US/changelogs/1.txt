@@ -1,0 +1,1 @@
+First release: WhatsApp Web runs in the background on the phone and every message (including deleted ones) is logged, encrypted, on the phone.

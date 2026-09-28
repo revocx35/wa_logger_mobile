@@ -1,0 +1,1 @@
+Now licensed under GPL-3.0-or-later and built reproducibly, so the F-Droid and GitHub APKs are identical and signed with the same key. No functional changes.

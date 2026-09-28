@@ -22,8 +22,15 @@ android {
         applicationId = "io.github.revocx35.walmobile"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
+    }
+
+    // F-Droid builds the release from source and publishes the GitHub APK only if both are identical
+    // (reproducible build, ARCHITECTURE §10): no Google-signed dependency list in the APK, no git revision.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     signingConfigs {
@@ -45,6 +52,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
+            vcsInfo.include = false
             buildConfigField("boolean", "FAKE_WA", "false")
         }
         debug {

@@ -1,0 +1,1 @@
+Keeps an encrypted log of your WhatsApp messages, including deleted ones

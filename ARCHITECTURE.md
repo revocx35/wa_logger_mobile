@@ -169,5 +169,17 @@ storage, security log, wipe, app. `FLAG_SECURE` by default. Notification taps op
 Kotlin 2.4, AGP 9.4, Gradle 9.8, compile/target SDK 37, min SDK 26. Package `io.github.revocx35.walmobile`
 (`.debug`, `.e2e` suffixes). R8 on for release (shrink/optimize, no obfuscation). CI (`.github/workflows/ci.yml`):
 bridge tests; core + app unit tests, lint, debug and e2e builds. Releases are manual: bump `versionCode`/
-`versionName`, run the e2e script on the `e2e` build, `assembleRelease` with `keystore.properties` (never committed;
-location in Claude's project memory), `gh release create vX.Y.Z` with the APK and the certificate SHA-256.
+`versionName`, add `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` (≤ 500 characters), run the e2e
+script on the `e2e` build, tag `vX.Y.Z`, `assembleRelease` with `keystore.properties` (never committed; location in
+Claude's project memory) from a clean checkout of the tag, `gh release create vX.Y.Z` with the APK named
+`wa_logger_mobile-X.Y.Z.apk` and the certificate SHA-256.
+
+**F-Droid** (fdroiddata `metadata/io.github.revocx35.walmobile.yml`; license GPL-3.0-or-later, anti-feature
+NonFreeNet): F-Droid builds each new `v*` tag (`UpdateCheckMode: Tags`) with Debian's OpenJDK 21 and publishes the
+GitHub APK (`Binaries`, `AllowedAPKSigningKeys`) only if its own unsigned build is identical to it apart from the
+signature, so users can move between F-Droid and GitHub without reinstalling (which would delete the log). Keep the
+build reproducible: no dependency-info block and no VCS info in the APK (both off in `app/build.gradle.kts`), no
+build timestamps, JDK 21, and build the release APK from the tag with no local changes. Check before uploading:
+build the tag again in another directory without `keystore.properties` (`--no-build-cache`), then
+`apksigcopier compare <signed.apk> --unsigned <unsigned.apk>`. The store listing (texts, icon, screenshots, which
+the README also shows) is `fastlane/metadata/android/en-US/`.
