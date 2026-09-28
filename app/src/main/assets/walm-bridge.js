@@ -213,7 +213,11 @@
     }, 250);
   }
 
-  /** How this linked device is named on the phone (whatsapp-web.js setDeviceName). */
+  /**
+   * How this linked device is named on the phone (whatsapp-web.js setDeviceName). Only older WhatsApp Web builds
+   * have WAWebMiscBrowserUtils.info; current ones derive the name from the user agent in WAWebBrowserInfo (a
+   * function module that can't be patched from here), so the phone shows a Chrome-on-Linux device.
+   */
   function setDeviceName(os, browser) {
     var U = tryReq('WAWebMiscBrowserUtils');
     if (!U || typeof U.info !== 'function' || U.__walm) return;

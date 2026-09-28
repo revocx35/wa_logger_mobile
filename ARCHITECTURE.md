@@ -58,7 +58,9 @@ scripts/                e2e.py (emulator end-to-end), ui.py (UI Automator driver
   open in the browser only when tapped while the page is shown). User agent: the WebView's own Chrome version as
   desktop Linux Chrome, plus matching Client Hints metadata (`mobile=false`), because WhatsApp Web serves the full
   site only to desktop browsers.
-* The linked device is named "wa_logger mobile" (Chrome) on the phone (bridge overrides `WAWebMiscBrowserUtils.info`).
+* The phone lists the linked device as Chrome on Linux (from the user agent). The whatsapp-web.js device-name
+  override (`WAWebMiscBrowserUtils.info`) no longer exists on WhatsApp Web 2.3000.10486x (the info moved into the
+  function module `WAWebBrowserInfo`); the bridge still applies it where present.
 * Requires `DOCUMENT_START_SCRIPT` and `WEB_MESSAGE_LISTENER` (WebView ~90+); otherwise the status asks to update
   Android System WebView.
 
