@@ -755,6 +755,8 @@
             mediaKey: msg.mediaKey,
             mediaKeyTimestamp: msg.mediaKeyTimestamp,
             type: msg.type,
+            // Since WhatsApp Web 2.3000.1049x the result is checked against this (absent = octet-stream → rejected).
+            mimetype: msg.mimetype,
             signal: new AbortController().signal,
             downloadQpl: qpl,
           }),
@@ -762,7 +764,7 @@
         );
       } catch (e) {
         if (e && (e.status === 404 || e.status === 410)) return { status: 'unavailable', reason: 'gone' };
-        return { status: 'failed', reason: 'download_error' };
+        return { status: 'failed', reason: 'download_error:' + String((e && e.name) || 'unknown').slice(0, 40) };
       }
       if (buf === TIMEOUT) return { status: 'retry', reason: 'download_timeout' };
       if (!buf || typeof buf.byteLength !== 'number') return { status: 'failed', reason: 'no_data' };

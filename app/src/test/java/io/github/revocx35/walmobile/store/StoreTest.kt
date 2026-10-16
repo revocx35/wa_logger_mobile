@@ -54,6 +54,8 @@ class Harness {
     val settings = SettingsStore(repo)
     val events = EventBus()
     val enqueued = mutableListOf<String>()
+    /** The row's media_status at the moment it was enqueued (the queue skips rows that aren't pending). */
+    val enqueuedStatus = mutableListOf<String?>()
     val emitted = mutableListOf<ServerEvent>()
     val mediaDir: File = File(app.cacheDir, "media-test-${System.nanoTime()}")
     val files = MediaFiles(mediaDir, repo) { null }
@@ -64,6 +66,7 @@ class Harness {
     val ingest = Ingest(repo, vault, settings, events, api, object : MediaSink {
         override fun enqueue(messageId: String, priority: Priority) {
             enqueued += messageId
+            enqueuedStatus += repo.getMessage(messageId)?.mediaStatus
         }
     })
     var retried = mutableListOf<String>()
@@ -160,6 +163,16 @@ class IngestTest {
         assertNull(vo.thumbEnc)
         assertEquals("view_once", vo.type)
         assertEquals(1, h.enqueued.size)
+    }
+
+    @Test
+    fun requeuesFailedMediaOnlyAfterTheRowIsPending(): Unit = runBlocking {
+        val img = text("F1", "").with("type" to "\"image\"", "directPath" to "\"/p\"", "size" to "10", "mimetype" to "\"image/jpeg\"")
+        val id = h.ingest.message(img, Source.Live)!!
+        h.repo.updateMessage(id, io.github.revocx35.walmobile.store.values("media_status" to "failed", "media_attempts" to 4))
+        h.enqueuedStatus.clear()
+        h.ingest.message(img, Source.History)
+        assertEquals(listOf<String?>("pending"), h.enqueuedStatus)
     }
 
     @Test

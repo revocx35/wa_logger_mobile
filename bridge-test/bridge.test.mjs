@@ -262,7 +262,7 @@ test('media: prepare in the page, pull base64 slices, release; statuses for the 
   assert.equal((await call(env, 'mediaPrepare', { id: 'vo', max: 10 })).status, 'view_once');
   env.Msg.models.set('re', msg('RE', { type: 'image', directPath: '/v/x', mediaData: { mediaStage: 'REUPLOADING' } }));
   assert.equal((await call(env, 'mediaPrepare', { id: 're', max: 1e9 })).status, 'retry');
-  env.Msg.models.set('gone', msg('GO', { type: 'image', directPath: '/v/gone', mediaData: { mediaStage: 'RESOLVED' } }));
+  env.Msg.models.set('gone', msg('GO', { type: 'image', directPath: '/v/gone', mimetype: 'image/jpeg', mediaData: { mediaStage: 'RESOLVED' } }));
   assert.deepEqual(await call(env, 'mediaPrepare', { id: 'gone', max: 1e9 }), { status: 'unavailable', reason: 'gone' });
 });
 

@@ -124,6 +124,7 @@
     WAWebDownloadManager: {
       downloadManager: {
         downloadAndMaybeDecrypt: function (o) {
+          if (!o.mimetype) return Promise.reject(Object.assign(new Error('bad type'), { name: 'InvalidMediaFileType' }));
           var url = media.get(o.directPath);
           if (!url) return Promise.reject(Object.assign(new Error('gone'), { status: 404 }));
           return fetch(url).then(function (r) { return r.arrayBuffer(); });

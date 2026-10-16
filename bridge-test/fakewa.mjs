@@ -139,7 +139,9 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     WAWebContactProfilePicThumbBridge: { requestProfilePicFromServer: async () => ({ eurl: 'https://pps.whatsapp.net/v/pic.jpg' }) },
     WAWebDownloadManager: {
       downloadManager: {
-        downloadAndMaybeDecrypt: async ({ directPath }) => {
+        downloadAndMaybeDecrypt: async ({ directPath, mimetype }) => {
+          // Current WhatsApp Web rejects downloads without the message's mimetype.
+          if (!mimetype) throw Object.assign(new Error('bad type'), { name: 'InvalidMediaFileType' });
           const data = media.get(directPath);
           if (!data) throw Object.assign(new Error('gone'), { status: 404 });
           return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);

@@ -270,11 +270,12 @@ class Ingest(
         // Media that failed earlier can be retried when WhatsApp offers it again.
         if (existing.mediaStatus == "failed" && m.downloadable && existing.mediaAttempts < 8) {
             patch.put("media_status", "pending")
-            media.enqueue(existing.id, if (source == Source.Live) Priority.Live else Priority.History)
         }
         if (patch.size() > 0) {
             patch.put("updated_at", t)
             repo.updateMessage(existing.id, patch)
+            // Enqueue only after the row says "pending": the queue skips rows that don't.
+            if (patch.getAsString("media_status") == "pending") media.enqueue(existing.id, if (source == Source.Live) Priority.Live else Priority.History)
             events.emit(ServerEvent.MessageUpdate(existing.chatId, existing.id, reason))
         }
     }
