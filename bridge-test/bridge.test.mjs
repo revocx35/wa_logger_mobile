@@ -293,3 +293,52 @@ test('CONFLICT: the session is taken back', async () => {
   await tick(5200);
   assert.equal(env.Socket.tookOver, true);
 });
+
+test('sending: text with a reply, media in chunks, reactions, revoke, edit, read receipts, numbers', async () => {
+  const env = await linked();
+  const chat = new MsgModel({ id: new Wid(CHAT), msgs: new (await import('./fakewa.mjs')).Emitter() });
+  env.Chat.add(chat, CHAT);
+  const quoted = msg('Q1');
+  env.Msg.add(quoted);
+  const mine = msg('M1', {}, { fromMe: true });
+  env.Msg.add(mine);
+
+  assert.deepEqual(await call(env, 'sendText', { chatId: CHAT, text: 'Merhaba', quotedId: String(quoted.id) }), { id: `true_${CHAT}_OUT1` });
+  assert.deepEqual(env.sent.at(-1), { op: 'text', chat: CHAT, text: 'Merhaba', quoted: String(quoted.id) });
+
+  const token = await call(env, 'uploadBegin', { size: 6 });
+  await call(env, 'uploadChunk', { token, offset: 0, b64: Buffer.from('abc').toString('base64') });
+  await call(env, 'uploadChunk', { token, offset: 3, b64: Buffer.from('def').toString('base64') });
+  const r = await call(env, 'sendMedia', { chatId: CHAT, token, mime: 'audio/ogg', filename: 'voice.ogg', kind: 'voice', caption: 'ignored' });
+  assert.deepEqual(r, { id: `true_${CHAT}_MEDIA1` });
+  assert.deepEqual(JSON.parse(JSON.stringify(env.sent.at(-1))), { op: 'media', chat: CHAT, params: { isPtt: true }, caption: null, type: 'audio/ogg', name: 'voice.ogg', bytes: 'abcdef' });
+
+  await call(env, 'react', { id: String(quoted.id), emoji: '👍' });
+  await call(env, 'revoke', { id: String(mine.id) });
+  await call(env, 'edit', { id: String(mine.id), text: 'fixed' });
+  await call(env, 'markRead', { chatId: CHAT });
+  assert.deepEqual(env.sent.slice(-4).map((x) => x.op), ['react', 'revoke', 'edit', 'seen']);
+  assert.equal(await call(env, 'resolvePhone', { phone: '+90 555 123 45 67' }), '905551234567@c.us');
+  assert.equal(await call(env, 'resolvePhone', { phone: '+1 202 555 0100' }), null);
+});
+
+test('sending: refusals and failures come back with error codes', async () => {
+  const env = await linked();
+  env.Chat.add(new MsgModel({ id: new Wid(CHAT), msgs: null }), CHAT);
+  const theirs = msg('T1', { canReply: false });
+  env.Msg.add(theirs);
+  const fails = async (op, args) => {
+    const before = env.posted.length;
+    env.send({ id: 900 + before, op, args });
+    return until(env, (m) => m.t === 'res' && m.id === 900 + before);
+  };
+  assert.equal((await fails('revoke', { id: String(theirs.id) })).code, 'not_allowed');
+  assert.equal((await fails('edit', { id: String(theirs.id), text: 'x' })).code, 'not_allowed');
+  assert.equal((await fails('sendText', { chatId: CHAT, text: 'x', quotedId: String(theirs.id) })).code, 'not_allowed');
+  assert.equal((await fails('sendText', { chatId: CHAT, text: 'x', quotedId: 'gone' })).code, 'not_found');
+  env.sendResult.value = 'ERROR_NETWORK';
+  const r = await fails('sendText', { chatId: CHAT, text: 'x' });
+  assert.equal(r.code, 'send_failed');
+  assert.equal(r.error, 'WhatsApp could not send it (error_network).');
+  assert.equal((await fails('uploadChunk', { token: 'nope', offset: 0, b64: '' })).code, 'not_found');
+});

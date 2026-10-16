@@ -101,9 +101,14 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     },
   });
   const Conn = Object.assign(new Emitter(), { ref: 'REF1', pushname: 'Owner' });
+  const sent = []; // what the send actions were asked to do
+  const sendResult = { value: 'OK' };
   const Cmd = Object.assign(new Emitter(), {
     refreshQR() {
       Conn.ref = 'REF-refreshed';
+    },
+    sendRevokeMsgs(chat, list, opts) {
+      sent.push({ op: 'revoke', chat: String(chat.id), ids: list.list.map(String), type: list.type, opts });
     },
   });
   const Msg = new Collection();
@@ -170,6 +175,32 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     },
     WAWebOfflineHandler: { OfflineMessageHandler: { getOfflineDeliveryProgress: () => 42 } },
     WAWebAddonReactionTableMode: { reactionTableMode: { bulkUpsert: (list) => list.length } },
+    // Sending (the send actions WhatsApp Web's compose box and message menu call).
+    WAWebMsgReply: { canReplyMsg: (m) => m.canReply !== false },
+    WAWebSendTextMsgChatAction: {
+      sendTextMsgToChat: async (chat, text, opts) => {
+        sent.push({ op: 'text', chat: String(chat.id), text, quoted: opts.quotedMsg ? String(opts.quotedMsg.id) : null });
+        const m = new MsgModel({ id: new MsgKey({ fromMe: true, remote: String(chat.id), id: `OUT${sent.length}` }), type: 'chat', body: text, isNewMsg: true });
+        chat.msgs?.emit('add', m);
+        return { messageSendResult: sendResult.value };
+      },
+    },
+    WAWebMediaOpaqueData: { createFromData: async (file, type) => ({ file, type }) },
+    WAWebPrepRawMedia: {
+      prepRawMedia: (opaque, params) => ({
+        sendToChat: async ({ chat, options }) => {
+          const o = await opaque;
+          const bytes = Buffer.from(await o.file.arrayBuffer()).toString();
+          sent.push({ op: 'media', chat: String(chat.id), params, caption: options.caption ?? null, type: o.type, name: o.file.name, bytes });
+          return { messageSendResult: sendResult.value, msg: { id: new MsgKey({ fromMe: true, remote: String(chat.id), id: 'MEDIA1' }) } };
+        },
+      }),
+    },
+    WAWebSendReactionMsgAction: { sendReactionToMsg: async (m, e) => sent.push({ op: 'react', id: String(m.id), e }) },
+    WAWebMsgActionCapability: { canSenderRevokeMsg: (m) => !!m.id.fromMe, canAdminRevokeMsg: () => false, canEditText: (m) => !!m.id.fromMe },
+    WAWebSendMessageEditAction: { sendMessageEdit: async (m, t) => sent.push({ op: 'edit', id: String(m.id), t }) },
+    WAWebUpdateUnreadChatAction: { sendSeen: async ({ chat }) => sent.push({ op: 'seen', chat: String(chat.id) }) },
+    WAWebQueryExistsJob: { queryPhoneExists: async (p) => (p === '+905551234567' ? { wid: new Wid('905551234567@c.us') } : null) },
     WAWebPresenceChatAction: {
       sent: 0,
       sendPresenceUnavailable() {
@@ -201,6 +232,8 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     },
     clearInterval,
     Blob,
+    File,
+    atob,
     FileReader,
     AbortController,
   };
@@ -216,7 +249,7 @@ export function makeWindow({ state = 'OPENING', synced = false } = {}) {
     };
   };
   const send = (cmd) => listeners.forEach((fn) => fn({ data: JSON.stringify(cmd) }));
-  return { win, ctx, posted, send, ready, modules, Socket, Conn, Cmd, Msg, Chat, Contact, earlier, media };
+  return { win, ctx, posted, send, ready, modules, Socket, Conn, Cmd, Msg, Chat, Contact, earlier, media, sent, sendResult };
 }
 
 export const BRIDGE = fs.readFileSync(new URL('../app/src/main/assets/walm-bridge.js', import.meta.url), 'utf8');

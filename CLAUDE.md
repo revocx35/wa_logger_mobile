@@ -12,6 +12,9 @@ The server version is https://github.com/revocx35/wa_logger (local checkout `/ro
   freezes a page 60 s after its WebView is detached; ARCHITECTURE §3). Never run two WebViews with WhatsApp Web.
 - WhatsApp Web replaces `setTimeout`/`setInterval`: the bridge uses the saved natives (`T`). Every awaited
   WhatsApp call goes through `within()` (which clears its timer).
+- Sending (ARCHITECTURE §11): bridge ops in `walm-bridge.js` mirror the server's `wa/walpage.ts`; keep them in step.
+  The sending UI (`ui/Sending.kt`, `ui/components/Composer.kt`, `media/VoiceRecorder.kt`) is the server client's; port
+  changes both ways. Calls are impossible in WebView (no SharedArrayBuffer) — don't try again without a new WebView.
 - `core/Models.kt` mirrors wa_logger's `shared/api.d.ts`; `core/wa/Mapper.kt` and `engine/Ingest.kt` port the
   server's `wa/mapper.ts` and `wa/ingest.ts`. Keep them in step when porting fixes from the server.
 - DB migrations in `store/Db.kt` are append-only; encrypted fields are AAD-bound to their row id.

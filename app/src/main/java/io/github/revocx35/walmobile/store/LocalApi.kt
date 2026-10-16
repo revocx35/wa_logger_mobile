@@ -69,6 +69,7 @@ class SettingsStore(private val repo: Repo) {
             downloadHistoryMedia = p.downloadHistoryMedia ?: cur.downloadHistoryMedia,
             mediaMaxMb = p.mediaMaxMb ?: cur.mediaMaxMb,
             historyPerChat = p.historyPerChat ?: cur.historyPerChat,
+            readReceipts = p.readReceipts ?: cur.readReceipts,
         )
         repo.setState(KEY, WaJson.encodeToString(Settings.serializer(), next))
         cached = next

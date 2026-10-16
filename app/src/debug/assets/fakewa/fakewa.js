@@ -145,6 +145,72 @@
     WAWebPresenceChatAction: { unavailable: 0, sendPresenceUnavailable: function () { this.unavailable++; return Promise.resolve(); } },
   };
 
+  // Sending: like WhatsApp Web, what is sent becomes an own message in the chat (so the app logs it).
+  var sent = [];
+  function ownMsg(chat, o) {
+    var id = add(String(chat.id), Object.assign({ fromMe: true }, o));
+    return Msg.get(id);
+  }
+  modules.WAWebMsgReply = { canReplyMsg: function () { return true; } };
+  modules.WAWebSendTextMsgChatAction = {
+    sendTextMsgToChat: function (chat, text, opts) {
+      var q = opts && opts.quotedMsg;
+      sent.push({ op: 'text', chat: String(chat.id), text: text, quoted: q ? String(q.id) : null });
+      ownMsg(chat, q ? { body: text, quotedMsg: { type: 'chat', body: q.body }, quotedStanzaID: q.id.id, quotedParticipant: q.from } : { body: text });
+      return Promise.resolve({ messageSendResult: 'OK' });
+    },
+  };
+  modules.WAWebMediaOpaqueData = { createFromData: function (file, type) { return Promise.resolve({ file: file, type: type }); } };
+  modules.WAWebPrepRawMedia = {
+    prepRawMedia: function (opaque, params) {
+      return {
+        sendToChat: function (a) {
+          return Promise.resolve(opaque).then(function (o) {
+            var type = params.isPtt ? 'ptt' : params.asDocument ? 'document' : /^image\//.test(o.type) ? 'image' : /^video\//.test(o.type) ? 'video' : 'document';
+            sent.push({ op: 'media', chat: String(a.chat.id), kind: type, size: o.file.size, caption: a.options.caption || null });
+            // Added before the upload finishes: no directPath yet (the app stores the file it sent).
+            var m = ownMsg(a.chat, { type: type, caption: a.options.caption, mimetype: o.type, filename: o.file.name, size: o.file.size });
+            return { messageSendResult: 'OK', msg: m };
+          });
+        },
+      };
+    },
+  };
+  modules.WAWebSendReactionMsgAction = {
+    sendReactionToMsg: function (m, e) {
+      sent.push({ op: 'react', id: String(m.id), e: e });
+      modules.WAWebAddonReactionTableMode.reactionTableMode.bulkUpsert([{ reactionParentKey: m.id, author: new Wid(ME), reactionText: e, reactionTimestamp: Date.now() }]);
+      return Promise.resolve();
+    },
+  };
+  modules.WAWebMsgActionCapability = {
+    canSenderRevokeMsg: function (m) { return !!m.id.fromMe; },
+    canAdminRevokeMsg: function () { return false; },
+    canEditText: function (m) { return !!m.id.fromMe && m.type === 'chat'; },
+    canEditCaption: function () { return false; },
+  };
+  Cmd.sendRevokeMsgs = function (chat, list) {
+    list.list.forEach(function (m) {
+      sent.push({ op: 'revoke', id: String(m.id) });
+      window.fake.revoke(String(m.id));
+    });
+  };
+  modules.WAWebSendMessageEditAction = {
+    sendMessageEdit: function (m, text) {
+      sent.push({ op: 'edit', id: String(m.id) });
+      window.fake.edit(String(m.id), text);
+      return Promise.resolve();
+    },
+  };
+  modules.WAWebUpdateUnreadChatAction = { sendSeen: function (a) { sent.push({ op: 'seen', chat: String(a.chat.id) }); return Promise.resolve(); } };
+  modules.WAWebQueryExistsJob = {
+    queryPhoneExists: function (p) {
+      var id = p.replace(/\D/g, '') + '@c.us';
+      if (!Chat.get(id)) chat(id, '+' + id.split('@')[0]);
+      return Promise.resolve({ wid: new Wid(id) });
+    },
+  };
+
   var seq = 0;
   function nextId() { return 'FAKE' + Date.now().toString(36).toUpperCase() + (seq++); }
 
@@ -276,6 +342,8 @@
       return 'reacted';
     },
     counts: function () { return { chats: Chat.models.size, msgs: Msg.models.size }; },
+    /** What the send actions were asked to do (no content beyond what the test typed). */
+    sent: function () { return sent; },
   };
 
   // WhatsApp Web boots after the document-start bridge: define the module system a moment later.

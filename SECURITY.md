@@ -15,6 +15,7 @@ are in [ARCHITECTURE.md](ARCHITECTURE.md) §3–§7.
 | Other apps on the phone | No exported components except the launcher activity and the boot receiver (which only starts the service); no content provider except a non-exported FileProvider with per-file read grants; no local network server. |
 | Network attackers | HTTPS only, system CAs only (user-added CAs are not trusted). |
 | Fingerprint unlock abuse | The biometric copy of the key is usable only right after a strong biometric check and is invalidated when fingerprints are added or removed. |
+| Sending as the owner (0.2.0) | Only from the unlocked app, only while WhatsApp is linked, at most 300 sends per hour, every send in the security log (type only, no content). Voice notes: the microphone permission is asked on first use; the recording stays in the app's private cache and is deleted after sending. The hidden WhatsApp Web page still gets no camera/microphone permission (calls are not supported). |
 
 ## Accepted / out of scope
 

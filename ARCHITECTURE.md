@@ -8,9 +8,10 @@
 A standalone Android app that does what the [wa_logger](https://github.com/revocx35/wa_logger) server does, on the
 phone: it runs WhatsApp Web in a WebView that is never shown, records every message, edit, reaction and media file
 of the owner's account, encrypted at rest, keeps messages that are later deleted, and shows everything in a
-read-only, WhatsApp-like UI (wa_logger's web design, via wa_logger's Android client, which this app is forked from).
+WhatsApp-like UI (wa_logger's web design, via wa_logger's Android client, which this app is forked from) that can also
+send as the account (§11).
 
-Out of scope on purpose: sending messages, several accounts, view-once media (placeholder only).
+Out of scope on purpose: several accounts, view-once media (placeholder only). Calls are impossible in a WebView (§11).
 
 ## 2. Map of the code
 
@@ -183,3 +184,27 @@ build timestamps, JDK 21, and build the release APK from the tag with no local c
 build the tag again in another directory without `keystore.properties` (`--no-build-cache`), then
 `apksigcopier compare <signed.apk> --unsigned <unsigned.apk>`. The store listing (texts, icon, screenshots, which
 the README also shows) is `fastlane/metadata/android/en-US/`.
+
+## 11. Sending (0.2.0) and why there are no calls
+
+* UI: the server client's sending UI, unchanged (`ui/Sending.kt` `MessageSender`, `ui/components/Composer.kt` with the
+  long-press `MessageMenu` and `NewChatDialog`, `media/VoiceRecorder.kt` Ogg/Opus via MediaRecorder, Android 10+,
+  `RECORD_AUDIO` asked on first use). Here `MessageSender` is `engine/LocalSender.kt`.
+* `LocalSender` → `WaEngine.pageCall` → bridge ops `sendText`, `uploadBegin`/`uploadChunk` (512 KiB base64 slices)/
+  `uploadDrop`, `sendMedia` (kind auto/document/voice/gif), `react`, `revoke`, `edit`, `markRead`, `resolvePhone`.
+  The bridge calls WhatsApp Web's own send actions, the same as the wa_logger server's `wa/walpage.ts` (its
+  docs/wwebjs-notes.md "Sending" lists them). Page errors carry a code (`not_found`, `not_allowed`, `validation`,
+  `send_failed`, `timeout`) that `LocalSender.toApi` turns into messages the UI shows.
+* WhatsApp adds a sent media message to the chat before its upload finishes, so it is logged without a downloadable
+  file; `LocalSender.storeSentMedia` encrypts the original file into the media store for that message id (the media
+  queue drops its own download if a file appeared meanwhile).
+* Limits: only while linked (`WaEngine.linked`), 300 sends per rolling hour, files up to 64 MB, `message_sent` in the
+  security log (type only). Sending a message marks the chat read; opening one does only with `readReceipts`.
+* The chat stays at the newest message when the keyboard opens/closes, when media at the end finishes loading and
+  after sending, unless the owner scrolled up or jumped to a message (`wasAtBottom` in `ChatPane`).
+* **Calls:** WhatsApp Web's calling (July 2026) needs `SharedArrayBuffer` + `Atomics` (a cross-origin isolated page).
+  Android System WebView never isolates pages: on the API 37 emulator with WebView 145, `crossOriginIsolated` is false,
+  `SharedArrayBuffer` is undefined and `WAWebVoipGatingUtils.getUnsupportedBrowserReason()` returns
+  `missing_shared_array_buffer`. Only the Chromium command-line flag `--enable-features=SharedArrayBuffer` changes that,
+  and WebView reads command-line flags only on debuggable (userdebug) devices; the WebView DevTools flag list of
+  normal phones has no such switch (checked; `site-per-process` does not help).

@@ -64,6 +64,17 @@ class AppGraph(val context: Context, val diagnostics: Diagnostics) {
 
     val engine = WaEngine(context, repo, vault, settings, events, files, http, scope) { where, e -> diagnostics.recordNonFatal(where, e) }
     val api = LocalApi(repo, vault, settings, engine, events, files)
+    val sender = io.github.revocx35.walmobile.engine.LocalSender(
+        context.applicationContext,
+        { op, args, timeout -> engine.pageCall(op, args, timeout) },
+        { engine.linked },
+        repo,
+        vault,
+        files,
+        settings,
+        events,
+        { chatId -> engine.serial { engine.ingest.ensureChat(chatId, force = true) } },
+    )
     val controller = AppController(this)
 
     init {

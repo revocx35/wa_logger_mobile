@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -32,6 +33,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import io.github.revocx35.walmobile.core.userMessage
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
@@ -58,7 +64,11 @@ import io.github.revocx35.walmobile.core.WaText
 import io.github.revocx35.walmobile.ui.LocalFormatter
 import io.github.revocx35.walmobile.ui.LocalMessageActions
 import io.github.revocx35.walmobile.ui.MessageActions
+import io.github.revocx35.walmobile.ui.LocalSender
 import io.github.revocx35.walmobile.ui.components.Avatar
+import io.github.revocx35.walmobile.ui.components.Composer
+import io.github.revocx35.walmobile.ui.components.MessageMenu
+import io.github.revocx35.walmobile.ui.components.NewChatDialog
 import io.github.revocx35.walmobile.ui.components.Badge
 import io.github.revocx35.walmobile.ui.components.BadgeTone
 import io.github.revocx35.walmobile.ui.components.BtnStyle
@@ -94,9 +104,13 @@ fun ChatListPane(
     val c = Wa.colors
     val fmt = LocalFormatter.current
     Column(modifier.background(c.panel)) {
-        Box(Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
-            Text("Chats", style = WaType.paneTitle, color = c.text)
+        val sender = LocalSender.current
+        var newChat by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Chats", style = WaType.paneTitle, color = c.text, modifier = Modifier.weight(1f))
+            if (sender != null) IconBtn(WaIcons.plus, "New chat", { newChat = true })
         }
+        if (newChat && sender != null) NewChatDialog(sender, onOpen, { newChat = false })
         SearchBox(
             state.query,
             { state.query = it },
@@ -199,16 +213,49 @@ private const val GROUP_GAP_MS = 5 * 60_000L
 /** The chat log: header, in-chat search, messages with sticky day separators, read-only footer. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChatPane(state: ChatState, onBack: (() -> Unit)?, wide: Boolean, baseActions: MessageActions, modifier: Modifier = Modifier) {
+fun ChatPane(
+    state: ChatState,
+    onBack: (() -> Unit)?,
+    wide: Boolean,
+    baseActions: MessageActions,
+    modifier: Modifier = Modifier,
+    /** Why sending is not possible right now (e.g. WhatsApp disconnected); null = can send. */
+    sendDisabledReason: String? = null,
+) {
     val c = Wa.colors
     val fmt = LocalFormatter.current
     val chat = state.chat
     val isGroup = chat?.kind == ChatKind.Group || chat?.kind == ChatKind.Status || chat?.kind == ChatKind.Broadcast
     val title = chat?.name ?: "…"
     val listState = rememberLazyListState()
+    // Sending as the linked account (null in screenshot tests).
+    val sender = LocalSender.current
+    val canSend = sender != null && (chat?.kind == ChatKind.User || chat?.kind == ChatKind.Group)
+    var menuFor by remember(state.chatId) { mutableStateOf<Message?>(null) }
+    var replyTo by remember(state.chatId) { mutableStateOf<Message?>(null) }
+    var editing by remember(state.chatId) { mutableStateOf<Message?>(null) }
+    val scope = rememberCoroutineScope()
+    fun act(block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                state.error = e.userMessage()
+            }
+        }
+    }
+    LaunchedEffect(state.chatId, sender) {
+        // Read receipts only when the owner turned them on (off by default).
+        if (sender != null && sender.readReceipts()) runCatching { sender.markRead(state.chatId) }
+    }
     val actions = remember(baseActions, state) {
         object : MessageActions by baseActions {
             override fun jump(messageId: String) = state.jump(messageId)
+            override fun longPress(msg: Message) {
+                menuFor = msg
+            }
         }
     }
 
@@ -238,20 +285,27 @@ fun ChatPane(state: ChatState, onBack: (() -> Unit)?, wide: Boolean, baseActions
         return last >= listState.layoutInfo.totalItemsCount - 3
     }
 
+    // Whether the owner last left the list at the newest message (updated by scrolling).
+    var wasAtBottom by remember(state.chatId) { mutableStateOf(true) }
     LaunchedEffect(state) {
         state.scroll.collect { s ->
             when (s) {
                 ChatScroll.Bottom -> {
+                    wasAtBottom = true
                     val r = withTimeoutOrNull(5000) { snapshotFlow { currentRows }.first { it.isNotEmpty() } } ?: return@collect
                     withFrameNanos { }
                     listState.scrollToItem(r.size)
                 }
                 ChatScroll.Appended -> {
-                    val follow = nearBottom()
+                    val follow = wasAtBottom || nearBottom()
                     withFrameNanos { }
-                    if (follow) listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+                    if (follow) {
+                        wasAtBottom = true
+                        listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+                    }
                 }
                 is ChatScroll.To -> {
+                    wasAtBottom = false
                     val r = withTimeoutOrNull(5000) { snapshotFlow { currentRows }.first { indexIn(it, s.messageId) >= 0 } } ?: return@collect
                     withFrameNanos { }
                     val i = indexIn(r, s.messageId)
@@ -267,6 +321,23 @@ fun ChatPane(state: ChatState, onBack: (() -> Unit)?, wide: Boolean, baseActions
                 }
             }
         }
+    }
+    // Stay at the newest message when the keyboard opens or closes (it resizes the list), like WhatsApp:
+    // remember whether the owner last left the list at the bottom, and keep it there.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress to listState.canScrollForward }.collect { (scrolling, forward) -> if (scrolling) wasAtBottom = !forward }
+    }
+    // Content at the end grew (a photo finished loading, a reaction was added): stay at the newest message.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.canScrollForward }.collect { forward ->
+            if (forward && wasAtBottom && !listState.isScrollInProgress && listState.layoutInfo.totalItemsCount > 0) {
+                listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
+            }
+        }
+    }
+    val imeBottom = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)
+    LaunchedEffect(imeBottom) {
+        if (wasAtBottom && listState.layoutInfo.totalItemsCount > 0) listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
     }
     LaunchedEffect(listState, state) {
         snapshotFlow { listState.firstVisibleItemIndex }.distinctUntilChanged().filter { it < 5 }.collect { if (!state.loading) state.loadOlder() }
@@ -368,14 +439,48 @@ fun ChatPane(state: ChatState, onBack: (() -> Unit)?, wide: Boolean, baseActions
                     }
                 }
             }
-            Row(
-                Modifier.fillMaxWidth().background(c.head).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                WaIcon(WaIcons.lock, 14.dp, c.muted)
-                MutedText("Read-only log · messages are stored encrypted on this phone", style = WaType.small, maxLines = 2)
+            if (canSend && sender != null) {
+                Composer(
+                    chatId = state.chatId,
+                    sender = sender,
+                    replyTo = replyTo,
+                    editing = editing,
+                    disabledReason = sendDisabledReason,
+                    onDone = {
+                        replyTo = null
+                        editing = null
+                        // Show what was just sent (it arrives through the live updates and is followed from there).
+                        wasAtBottom = true
+                        scope.launch { if (listState.layoutInfo.totalItemsCount > 0) listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1) }
+                    },
+                )
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().background(c.head).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    WaIcon(WaIcons.lock, 14.dp, c.muted)
+                    MutedText(if (sender != null && chat != null) "You can’t send to this chat from here" else "Messages are stored encrypted on this phone", style = WaType.small, maxLines = 2)
+                }
             }
+        }
+        menuFor?.let { m ->
+            MessageMenu(
+                msg = m,
+                canSend = canSend && sendDisabledReason == null && m.deletedAt == null && m.type != MessageType.Revoked && m.type != MessageType.Ciphertext,
+                onReply = {
+                    editing = null
+                    replyTo = m
+                },
+                onEdit = {
+                    replyTo = null
+                    editing = m
+                },
+                onReact = { e -> act { sender?.react(m.id, e) } },
+                onRevoke = { act { sender?.revoke(m.id) } },
+                onClose = { menuFor = null },
+            )
         }
     }
 }

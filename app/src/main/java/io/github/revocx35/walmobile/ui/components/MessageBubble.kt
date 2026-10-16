@@ -290,17 +290,9 @@ fun MessageBubble(msg: Message, isGroup: Boolean, showSender: Boolean, highlight
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = {},
-                    onLongClickLabel = "Copy text",
-                    onLongClick = {
-                        val text = msg.text ?: return@combinedClickable
-                        val clip = ClipData.newPlainText("message", text)
-                        // Keep message text out of clipboard previews and keyboard suggestions.
-                        clip.description.extras = PersistableBundle().apply {
-                            putBoolean(if (Build.VERSION.SDK_INT >= 33) ClipDescription.EXTRA_IS_SENSITIVE else "android.content.extra.IS_SENSITIVE", true)
-                        }
-                        context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(clip)
-                        if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
-                    },
+                    onLongClickLabel = "Message options",
+                    // The message menu: reactions, reply, copy, edit, delete for everyone.
+                    onLongClick = { actions.longPress(msg) },
                 )
                 .padding(start = 9.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         ) {

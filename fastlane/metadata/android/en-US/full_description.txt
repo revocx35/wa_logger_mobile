@@ -4,6 +4,7 @@ wa_logger mobile runs the real WhatsApp Web in the background on your phone and 
 <ul>
 <li><b>Anti-delete:</b> messages deleted for everyone (or by a group admin) stay readable and are flagged in red. The Deleted page lists every deletion, and an optional notification tells you when one happens.</li>
 <li><b>Edit history:</b> earlier versions of edited messages are kept.</li>
+<li><b>Send messages:</b> text, replies, photos, videos, files, voice notes, reactions, edits and delete for everyone. What you send is logged too.</li>
 <li><b>All message types</b> except view-once media: text with WhatsApp formatting, photos, videos, GIFs, voice notes, audio, documents, stickers, locations, contact cards, polls, calls, group events, reactions, replies, forwards and status updates (optional).</li>
 <li><b>Media is downloaded immediately</b>, before it can be deleted, and stored encrypted.</li>
 <li><b>History import</b> of the last messages of every chat when you link.</li>

@@ -144,8 +144,9 @@ class MediaQueue(
         try {
             when (val out = download(id)) {
                 is Outcome.Ok -> {
-                    if (repo.getMessage(id) == null) {
-                        // Wiped while downloading.
+                    val now = repo.getMessage(id)
+                    if (now == null || now.mediaId != null) {
+                        // Wiped while downloading, or (own sent media) stored from the original file meanwhile.
                         repo.getMedia(out.mediaId)?.let { m ->
                             repo.deleteMedia(m.id)
                             files.delete(m.path)

@@ -207,6 +207,56 @@ def main():
     if "A message was deleted" not in n or "Bu mesajı" in n:
         raise UiError("deleted notification missing or leaking content")
 
+    step("send: text, reply, reaction, edit, delete for everyone (through the page's send actions)")
+    def hide_keyboard():
+        if "mInputShown=true" in ui.shell("dumpsys input_method", check=False):
+            ui.back()
+            time.sleep(0.5)
+    def reveal(**kw):
+        hide_keyboard()
+        # The target may be above or below the visible part of the chat.
+        for swipe in [None] + [(1500, 900)] * 4 + [(700, 1300)] * 8:
+            if ui.exists(**kw):
+                break
+            if swipe:
+                ui.shell(f"input swipe 540 {swipe[0]} 540 {swipe[1]} 300")
+                time.sleep(0.5)
+        return ui.find(**kw)
+    def long_press(**kw):
+        x, y = ui.center(reveal(**kw))
+        ui.shell(f"input swipe {x} {y} {x} {y} 900")
+    def send_text(text):
+        ui.tap(text="Message")
+        ui.type_text(text)
+        ui.tap(desc="Send")
+    send_text("Selam from the app")
+    expect_text(contains="Selam from the app", timeout=20)
+    long_press(contains="Deniz kenar")
+    ui.tap(text="Reply")
+    send_text("reply from the app")
+    expect_text(contains="eply from the app", timeout=20)
+    long_press(contains="Deniz kenar")
+    ui.tap(text="👍")
+    long_press(contains="Selam from the app")
+    ui.tap(text="Edit")
+    for _ in range(25):
+        ui.shell("input keyevent KEYCODE_DEL")
+    ui.type_text("Selam edited")
+    ui.tap(desc="Save edit")
+    time.sleep(2)
+    reveal(contains="Selam edited")
+    long_press(contains="eply from the app")
+    ui.tap(contains="Delete for everyone")
+    ui.tap(text="Yes, delete for everyone")
+    time.sleep(3)
+    ops = [o["op"] for o in page("fake.sent()")]
+    if ops[:2] != ["text", "seen"] or "react" not in ops or "edit" not in ops or "revoke" not in ops or ops.count("text") != 2:
+        raise UiError(f"unexpected send operations: {ops}")
+    reveal(contains="eply from the app")
+    if not any(t and t.startswith("Deleted for everyone") and "logged copy" in t for t in ui.texts()):
+        raise UiError("own deleted message not flagged")
+    ui.shot("07a_sent")
+
     step("Deleted tab and search")
     ui.back()
     ui.tap(text="Deleted")

@@ -161,7 +161,7 @@ class Presenter(private val repo: Repo, private val reader: DataReader) {
         for (r in reactions) {
             if (r.removedAt != null) continue
             val emoji = reader.tryText(F.reaction(r.messageId, r.senderId), r.emojiEnc)?.ifEmpty { null } ?: continue
-            byMsg.getOrPut(r.messageId) { mutableListOf() }.add(Reaction(r.senderId, contactName(r.senderId), emoji, r.ts))
+            byMsg.getOrPut(r.messageId) { mutableListOf() }.add(Reaction(r.senderId, if (isMe(r.senderId)) "You" else contactName(r.senderId), emoji, r.ts, fromMe = isMe(r.senderId)))
         }
         return rows.map { row ->
             val meta = metas[row.id]

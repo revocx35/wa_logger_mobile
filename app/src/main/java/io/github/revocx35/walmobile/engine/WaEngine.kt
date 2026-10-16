@@ -447,6 +447,12 @@ class WaEngine(
         enqueue("wipe") { ingest.resetCaches() }
     }
 
+    /** Runs a bridge operation (sending, `LocalSender`); throws [PageError]. */
+    suspend fun pageCall(op: String, args: JsonObject, timeoutMs: Long): kotlinx.serialization.json.JsonElement = bridge.call(op, args, timeoutMs)
+
+    /** Linked and logging (sending is possible). */
+    val linked: Boolean get() = _status.value.state in linkedStates
+
     fun refreshQr() {
         scope.launch(Dispatchers.IO) { runCatching { bridge.call("refreshQr", timeoutMs = 15_000) } }
     }

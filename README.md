@@ -22,6 +22,13 @@ _(Screenshots show demo data.)_
 - **Anti-delete:** messages deleted for everyone (or by a group admin) stay readable and are flagged in red.
   The **Deleted** page lists every deletion, and an optional notification tells you when one happens.
 - **Edit history:** earlier versions of edited messages are kept.
+- **Send messages** (0.2.0): text, replies, photos/videos with a caption, any file up to 64 MB, voice notes (Android 10+),
+  reactions, editing your messages (within 15 minutes) and deleting them for everyone, and new chats by number (**+**
+  above the chat list). Long-press a message for its menu. Everything goes out through the app's own WhatsApp Web
+  session, with WhatsApp Web's own send functions, and is logged like everything else. Read receipts are sent only if
+  you turn them on (Settings → Logging).
+- **No calls:** Android's WebView can't run WhatsApp Web's calling (it needs `SharedArrayBuffer`, which WebView never
+  enables), so incoming calls ring only on your phone's WhatsApp.
 - **All message types** except view-once media: text with WhatsApp formatting, photos, videos, GIFs, voice notes,
   audio, documents, stickers, locations, contact cards, polls, calls, group events, reactions, replies, forwards and
   status updates (optional).

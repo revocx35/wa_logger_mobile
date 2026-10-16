@@ -58,7 +58,7 @@ class PageBridge(scope: CoroutineScope, private val onMessage: suspend (page: In
                         val id = obj["id"]?.jsonPrimitive?.intOrNull ?: continue
                         val d = pending.remove(id) ?: continue
                         if (obj["ok"]?.jsonPrimitive?.contentOrNull == "true") d.complete(obj["data"] ?: JsonNull)
-                        else d.completeExceptionally(PageError(obj["error"]?.jsonPrimitive?.contentOrNull ?: "page error"))
+                        else d.completeExceptionally(PageError(obj["error"]?.jsonPrimitive?.contentOrNull ?: "page error", obj["code"]?.jsonPrimitive?.contentOrNull))
                     }
                     else -> if (from === proxy) onMessage(page, obj)
                 }
@@ -115,7 +115,8 @@ class PageBridge(scope: CoroutineScope, private val onMessage: suspend (page: In
     }
 }
 
-class PageError(message: String) : Exception(message)
+/** A failed page call; [code] is the bridge's error code (e.g. "not_found", "send_failed") when the page gave one. */
+class PageError(message: String, val code: String? = null) : Exception(message)
 
 /** Helpers to read bridge JSON. */
 internal fun JsonObject.str(k: String): String? = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content

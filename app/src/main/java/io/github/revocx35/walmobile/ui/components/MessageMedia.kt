@@ -3,6 +3,7 @@ package io.github.revocx35.walmobile.ui.components
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -168,7 +169,7 @@ fun MessageMedia(msg: Message, maxWidth: Dp) {
             Box(
                 Modifier.padding(bottom = 4.dp).width(width).then(if (aspect != null) Modifier.aspectRatio(aspect.coerceIn(width.value / 420f, 3f)) else Modifier.heightIn(min = 180.dp))
                     .clip(shape).background(c.quoteBg)
-                    .clickable(role = Role.Image, onClickLabel = "Open photo") { actions.openMedia(msg) },
+                    .combinedClickable(role = Role.Image, onClickLabel = "Open photo", onLongClickLabel = "Message options", onLongClick = { actions.longPress(msg) }) { actions.openMedia(msg) },
             ) {
                 if (url != null && host.imageLoader != null) {
                     AsyncImage(url, contentDescription = msg.text, imageLoader = host.imageLoader!!, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -188,7 +189,7 @@ fun MessageMedia(msg: Message, maxWidth: Dp) {
             Column(Modifier.padding(bottom = 4.dp)) {
                 Box(
                     Modifier.width(width).aspectRatio((aspect ?: (16f / 9f)).coerceIn(width.value / 420f, 3f)).clip(RoundedCornerShape(6.dp)).background(Color.Black)
-                        .clickable(role = Role.Button, onClickLabel = "Play video") { actions.openMedia(msg) },
+                        .combinedClickable(role = Role.Button, onClickLabel = "Play video", onLongClickLabel = "Message options", onLongClick = { actions.longPress(msg) }) { actions.openMedia(msg) },
                     contentAlignment = Alignment.Center,
                 ) {
                     DataUrlImage(m.thumbDataUrl, Modifier.fillMaxSize())
@@ -207,7 +208,7 @@ fun MessageMedia(msg: Message, maxWidth: Dp) {
         else -> {
             Row(
                 Modifier.padding(bottom = 4.dp).widthIn(min = 240.dp, max = maxWidth).clip(RoundedCornerShape(6.dp)).background(c.quoteBg)
-                    .clickable(role = Role.Button, onClickLabel = "Open document") { actions.openDocument(msg) }
+                    .combinedClickable(role = Role.Button, onClickLabel = "Open document", onLongClickLabel = "Message options", onLongClick = { actions.longPress(msg) }) { actions.openDocument(msg) }
                     .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),

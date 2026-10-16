@@ -588,7 +588,214 @@
     }
   }
 
+  /* ------------------------------------------------------- sending */
+  // WhatsApp Web's own send actions (the ones its compose box and message menu call); the same calls as the
+  // wa_logger server's wa/walpage.ts (see its docs/wwebjs-notes.md "Sending").
+
+  function fail(code, message) {
+    var e = new Error(message || code);
+    e.code = code;
+    return e;
+  }
+
+  async function findMsg(id) {
+    var Msg = req('WAWebCollections').Msg;
+    var m = Msg.get(id);
+    if (m) return m;
+    var got = await within(Msg.getMessagesById([id]), 20000);
+    return got && got !== TIMEOUT && got.messages ? got.messages[0] || null : null;
+  }
+
+  async function quoteFor(quotedId) {
+    if (!quotedId) return undefined;
+    var q = await findMsg(quotedId);
+    if (!q) throw fail('not_found', 'The message you replied to is no longer in WhatsApp.');
+    var RU = tryReq('WAWebMsgReply');
+    var ok = RU && RU.canReplyMsg ? RU.canReplyMsg(q.unsafe ? q.unsafe() : q) : true;
+    if (!ok) throw fail('not_allowed', 'You can’t reply to that message.');
+    return q;
+  }
+
+  /** The first own message added to [chat] while [run] goes (the id of what was sent). */
+  async function capture(chat, run) {
+    var id = null;
+    var onAdd = function (m) {
+      try {
+        if (!id && m && m.id && m.id.fromMe) id = keyStr(m.id);
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    try {
+      if (chat.msgs && chat.msgs.on) chat.msgs.on('add', onAdd);
+    } catch (e) {
+      /* no events */
+    }
+    try {
+      var result = await run();
+      return { result: result, id: id };
+    } finally {
+      try {
+        if (chat.msgs && chat.msgs.off) chat.msgs.off('add', onAdd);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  /** WAWebSendMsgResultAction.SendMsgResult is a mirrored enum: "OK", "ERROR_NETWORK", … */
+  function checkResult(r) {
+    if (r === TIMEOUT) throw fail('timeout', 'WhatsApp did not confirm the message in time. It may still be sent.');
+    var v = r && typeof r === 'object' ? r.messageSendResult : undefined;
+    if (v !== undefined && v !== null && String(v) !== 'OK') throw fail('send_failed', 'WhatsApp could not send it (' + String(v).toLowerCase() + ').');
+  }
+
+  async function chatFor(id) {
+    var chat = await findChat(id);
+    if (!chat) throw fail('not_found', 'Chat not found in WhatsApp.');
+    return chat;
+  }
+
+  var uploads = new Map();
+
+  /** Duration (s) and the 64-bar waveform (0..100) WhatsApp shows for a voice note. */
+  async function voiceFields(file) {
+    try {
+      var ctx = new OfflineAudioContext(1, 1, 16000);
+      var buf = await ctx.decodeAudioData(await file.arrayBuffer());
+      var data = buf.getChannelData(0);
+      var bars = 64;
+      var block = Math.max(1, Math.floor(data.length / bars));
+      var levels = [];
+      for (var i = 0; i < bars; i++) {
+        var sum = 0;
+        for (var j = 0; j < block; j++) sum += Math.abs(data[i * block + j] || 0);
+        levels.push(sum / block);
+      }
+      var max = Math.max.apply(null, levels) || 1;
+      return {
+        duration: Math.max(1, Math.round(buf.duration)),
+        waveform: new Uint8Array(levels.map(function (v) {
+          return Math.floor((100 * v) / max);
+        })),
+      };
+    } catch (e) {
+      return undefined;
+    }
+  }
+
   var api = {
+    sendText: async function (args) {
+      var chat = await chatFor(args.chatId);
+      var quotedMsg = await quoteFor(args.quotedId);
+      var TM = req('WAWebSendTextMsgChatAction');
+      var r = await capture(chat, function () {
+        return within(TM.sendTextMsgToChat(chat, args.text, quotedMsg ? { quotedMsg: quotedMsg } : {}), 60000);
+      });
+      checkResult(r.result);
+      return { id: r.id };
+    },
+
+    uploadBegin: function (args) {
+      uploads.forEach(function (v, k) {
+        if (Date.now() - v.t > 10 * 60000) uploads.delete(k);
+      });
+      if (!(args.size > 0) || args.size > 200 * 1024 * 1024) throw fail('validation', 'bad size');
+      var token = Date.now().toString(36) + Math.random().toString(36).slice(2);
+      uploads.set(token, { u8: new Uint8Array(args.size), t: Date.now() });
+      return token;
+    },
+
+    uploadChunk: function (args) {
+      var up = uploads.get(args.token);
+      if (!up) throw fail('not_found', 'upload expired');
+      var bin = atob(args.b64);
+      if (args.offset < 0 || args.offset + bin.length > up.u8.length) throw fail('validation', 'chunk out of range');
+      for (var i = 0; i < bin.length; i++) up.u8[args.offset + i] = bin.charCodeAt(i);
+      return true;
+    },
+
+    uploadDrop: function (args) {
+      uploads.delete(args.token);
+      return true;
+    },
+
+    /** WhatsApp's own attach flow: OpaqueData → prepRawMedia → MediaPrep.sendToChat (uploads, then sends). */
+    sendMedia: async function (args) {
+      var up = uploads.get(args.token);
+      if (!up) throw fail('not_found', 'upload expired');
+      try {
+        var chat = await chatFor(args.chatId);
+        var quotedMsg = await quoteFor(args.quotedId);
+        var file = new File([up.u8], args.filename || 'file', { type: args.mime });
+        var params = {};
+        if (args.kind === 'document') params.asDocument = true;
+        else if (args.kind === 'gif') params.asGif = true;
+        else if (args.kind === 'voice') {
+          params.isPtt = true;
+          var pre = await voiceFields(file);
+          if (pre) params.precomputedFields = pre;
+        }
+        var opaque = req('WAWebMediaOpaqueData').createFromData(file, args.mime);
+        var prep = req('WAWebPrepRawMedia').prepRawMedia(opaque, params);
+        var options = {};
+        if (args.caption && args.kind !== 'voice') options.caption = args.caption;
+        if (quotedMsg) options.quotedMsg = quotedMsg;
+        var r = await capture(chat, function () {
+          return within(prep.sendToChat({ chat: chat, options: options }), 300000);
+        });
+        checkResult(r.result);
+        return { id: (r.result && r.result.msg && keyStr(r.result.msg.id)) || r.id };
+      } finally {
+        uploads.delete(args.token);
+      }
+    },
+
+    react: async function (args) {
+      var msg = await findMsg(args.id);
+      if (!msg) throw fail('not_found', 'Message not found in WhatsApp.');
+      var r = await within(req('WAWebSendReactionMsgAction').sendReactionToMsg(msg, args.emoji), 30000);
+      if (r === TIMEOUT) throw fail('timeout', 'WhatsApp did not confirm the reaction in time.');
+      return true;
+    },
+
+    revoke: async function (args) {
+      var msg = await findMsg(args.id);
+      if (!msg) throw fail('not_found', 'Message not found in WhatsApp.');
+      var cap = req('WAWebMsgActionCapability');
+      if (!(cap.canSenderRevokeMsg(msg) || (cap.canAdminRevokeMsg && cap.canAdminRevokeMsg(msg)))) {
+        throw fail('not_allowed', 'This message can no longer be deleted for everyone.');
+      }
+      var chat = await chatFor(widStr(msg.id.remote));
+      req('WAWebCmd').Cmd.sendRevokeMsgs(chat, { list: [msg], type: 'message' }, { clearMedia: true });
+      return true;
+    },
+
+    edit: async function (args) {
+      var msg = await findMsg(args.id);
+      if (!msg) throw fail('not_found', 'Message not found in WhatsApp.');
+      var cap = tryReq('WAWebMsgActionCapability');
+      var ok = cap && cap.canEditText ? cap.canEditText(msg) || (cap.canEditCaption && cap.canEditCaption(msg)) : !!(msg.id && msg.id.fromMe);
+      if (!ok) throw fail('not_allowed', 'This message can no longer be edited.');
+      var r = await within(req('WAWebSendMessageEditAction').sendMessageEdit(msg, args.text, {}), 60000);
+      if (r === TIMEOUT) throw fail('timeout', 'WhatsApp did not confirm the edit in time.');
+      return true;
+    },
+
+    markRead: async function (args) {
+      var chat = await chatFor(args.chatId);
+      await within(req('WAWebUpdateUnreadChatAction').sendSeen({ chat: chat, threadId: undefined }), 20000);
+      return true;
+    },
+
+    resolvePhone: async function (args) {
+      var digits = String(args.phone || '').replace(/\D/g, '');
+      if (digits.length < 6 || digits.length > 15) throw fail('validation', 'Enter the full number with country code.');
+      var res = await within(req('WAWebQueryExistsJob').queryPhoneExists('+' + digits), 20000);
+      if (!res || res === TIMEOUT || !res.wid) return null;
+      return widStr(res.wid);
+    },
+
     ping: function () {
       return typeof window.require === 'function' && S ? (synced ? 'ok' : 'loading') : 'loading';
     },
@@ -863,7 +1070,7 @@
           post({ t: 'res', id: cmd.id, ok: true, data: data === undefined ? null : data });
         },
         function (e) {
-          post({ t: 'res', id: cmd.id, ok: false, error: String((e && e.message) || e).slice(0, 200) });
+          post({ t: 'res', id: cmd.id, ok: false, error: String((e && e.message) || e).slice(0, 200), code: (e && e.code) || null });
         },
       );
   }

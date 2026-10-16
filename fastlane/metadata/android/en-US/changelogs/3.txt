@@ -1,0 +1,1 @@
+Send messages: text, replies, photos, videos, files, voice notes, reactions, edits and delete for everyone, plus new chats by number. Fixes photos and stickers no longer downloading since WhatsApp Web's October update. The chat stays at the newest message while typing.

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Voice messages (asked for when recording the first one). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- WhatsApp Web keeps running in a foreground service with a permanent notification. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
