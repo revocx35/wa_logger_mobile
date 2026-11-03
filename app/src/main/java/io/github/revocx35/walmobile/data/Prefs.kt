@@ -31,6 +31,30 @@ class Prefs(context: Context) {
     /** Lock the app this long after it leaves the screen (0 = at once, -1 = never while the app process runs). */
     val autoLockMinutes: StateFlow<Int> = _autoLockMinutes.asStateFlow()
 
+    private val _autoSave = flag(KEY_AUTOSAVE, false)
+    /** Copy new photos to the phone's gallery as they are downloaded (media/AutoSave.kt). Off by default. */
+    val autoSave: StateFlow<Boolean> = _autoSave.asStateFlow()
+    private val _autoSaveVideos = flag(KEY_AUTOSAVE_VIDEOS, false)
+    val autoSaveVideos: StateFlow<Boolean> = _autoSaveVideos.asStateFlow()
+    private val _autoSaveStatus = flag(KEY_AUTOSAVE_STATUS, false)
+    val autoSaveStatus: StateFlow<Boolean> = _autoSaveStatus.asStateFlow()
+    private val _autoSaveOnlyDisappearing = flag(KEY_AUTOSAVE_DISAPPEARING, false)
+    val autoSaveOnlyDisappearing: StateFlow<Boolean> = _autoSaveOnlyDisappearing.asStateFlow()
+    private val _autoSaveCount = MutableStateFlow(sp.getInt(KEY_AUTOSAVE_COUNT, 0))
+    val autoSaveCount: StateFlow<Int> = _autoSaveCount.asStateFlow()
+
+    fun setAutoSave(on: Boolean) = set(KEY_AUTOSAVE, on, _autoSave)
+    fun setAutoSaveVideos(on: Boolean) = set(KEY_AUTOSAVE_VIDEOS, on, _autoSaveVideos)
+    fun setAutoSaveStatus(on: Boolean) = set(KEY_AUTOSAVE_STATUS, on, _autoSaveStatus)
+    fun setAutoSaveOnlyDisappearing(on: Boolean) = set(KEY_AUTOSAVE_DISAPPEARING, on, _autoSaveOnlyDisappearing)
+
+    @Synchronized
+    fun addAutoSaved() {
+        val n = sp.getInt(KEY_AUTOSAVE_COUNT, 0) + 1
+        sp.edit().putInt(KEY_AUTOSAVE_COUNT, n).apply()
+        _autoSaveCount.value = n
+    }
+
     fun setSecureScreen(on: Boolean) = set(KEY_SECURE_SCREEN, on, _secureScreen)
     fun setKeepAwake(on: Boolean) = set(KEY_KEEP_AWAKE, on, _keepAwake)
     fun setAutostart(on: Boolean) = set(KEY_AUTOSTART, on, _autostart)
@@ -52,5 +76,10 @@ class Prefs(context: Context) {
         const val KEY_AUTOSTART = "autostart"
         const val KEY_NOTIFY_DELETED = "notify_deleted"
         const val KEY_AUTOLOCK = "autolock_minutes"
+        const val KEY_AUTOSAVE = "autosave"
+        const val KEY_AUTOSAVE_VIDEOS = "autosave_videos"
+        const val KEY_AUTOSAVE_STATUS = "autosave_status"
+        const val KEY_AUTOSAVE_DISAPPEARING = "autosave_disappearing"
+        const val KEY_AUTOSAVE_COUNT = "autosave_count"
     }
 }

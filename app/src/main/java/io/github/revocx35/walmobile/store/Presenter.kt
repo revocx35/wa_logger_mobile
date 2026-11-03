@@ -194,6 +194,7 @@ class Presenter(private val repo: Repo, private val reader: DataReader) {
                 mentions = meta?.mentions?.map { Mention(it, contactName(it)) } ?: emptyList(),
                 forwarded = row.isForwarded,
                 isStatus = row.isStatus,
+                disappearingSec = row.ephemeralSec,
                 ack = row.ack,
                 reactions = byMsg[row.id] ?: emptyList(),
                 edited = row.editedAt != null || edits > 0,

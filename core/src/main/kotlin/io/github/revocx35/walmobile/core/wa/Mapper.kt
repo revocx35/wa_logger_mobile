@@ -166,6 +166,8 @@ data class MappedMessage(
     val isViewOnce: Boolean,
     val isForwarded: Boolean,
     val isStatus: Boolean,
+    /** Disappearing-messages timer in seconds (`ephemeralDuration`), null when off. */
+    val ephemeralSec: Int?,
     val ack: Int?,
     val revoked: Boolean,
     val revokedBy: String?,
@@ -358,6 +360,7 @@ fun mapMessage(raw: JsonObject): MappedMessage {
         isViewOnce = isViewOnce,
         isForwarded = raw["isForwarded"].truthy(),
         isStatus = raw["isStatusV3"].truthy() || chatId == "status@broadcast",
+        ephemeralSec = raw["ephemeralDuration"].num()?.toInt()?.takeIf { it > 0 },
         ack = raw["ack"].num()?.toInt(),
         revoked = rawType == "revoked",
         revokedBy = if (rawType == "revoked") (if (raw["subtype"].str() == "admin") "admin" else "sender") else null,

@@ -9,4 +9,6 @@ The full agent notes live in [CLAUDE.md](CLAUDE.md) (rules, commands, environmen
   Ingest, MediaQueue, LocalSender for sending), encrypted store `store/`, crypto `core/crypto/`, UI `ui/`.
 - **Never:** log message content, attach the engine's WebView outside borrowView/returnView, run two WhatsApp Web
   WebViews, ship the fake WhatsApp page in release, edit old DB migrations, commit the signing key.
+- **0.3.0 parity with the server:** disappearing flag, reload resume, gallery auto-save (`media/AutoSave.kt`), multi-select
+  save, blocked contacts (`engine/BlockList.kt`) — ARCHITECTURE §12 lists what is deliberately not ported.
 - **Calls** are impossible in Android WebView (no SharedArrayBuffer; ARCHITECTURE §11).

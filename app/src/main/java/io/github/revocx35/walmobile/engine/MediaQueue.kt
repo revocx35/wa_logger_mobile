@@ -20,6 +20,32 @@ sealed interface Prep {
     data class Status(val status: String, val reason: String? = null) : Prep
 }
 
+/** What an optional copy of a downloaded file needs to know about its message (see [MediaTee]). */
+data class TeeInfo(
+    val type: String,
+    val chatId: String,
+    val isStatus: Boolean,
+    val disappearingSec: Int?,
+    val ts: Long,
+    val mime: String?,
+    val filename: String?,
+)
+
+/** One file being copied while it downloads; failures here never affect the encrypted copy. */
+interface TeeHandle {
+    fun write(bytes: ByteArray)
+    fun commit()
+    fun abort()
+}
+
+/**
+ * Optional plaintext copy of media at download time (the "save new photos to the gallery" setting). The bytes are
+ * in memory then anyway, so this works while the app is locked and needs no key.
+ */
+fun interface MediaTee {
+    fun open(info: TeeInfo): TeeHandle?
+}
+
 /** The page side of a media download (see walm-bridge.js mediaPrepare/mediaSlice/mediaRelease). */
 interface MediaDownloader {
     suspend fun prepare(messageId: String, maxBytes: Long): Prep
@@ -50,6 +76,7 @@ class MediaQueue(
     private val timers = HashSet<Job>()
     private val lock = Any()
     @Volatile var onSizeChanged: (() -> Unit)? = null
+    @Volatile var tee: MediaTee? = null
 
     fun size(): Int = synchronized(lock) { queued.size + running }
 
@@ -142,7 +169,7 @@ class MediaQueue(
             events.emit(ServerEvent.MessageUpdate(row.chatId, id, "media"))
         }
         try {
-            when (val out = download(id)) {
+            when (val out = download(id, row)) {
                 is Outcome.Ok -> {
                     val now = repo.getMessage(id)
                     if (now == null || now.mediaId != null) {
@@ -184,7 +211,7 @@ class MediaQueue(
     }
 
     /** Prepares in the page, pulls 2 MiB slices and encrypts them straight to disk. */
-    private suspend fun download(id: String): Outcome {
+    private suspend fun download(id: String, row: io.github.revocx35.walmobile.store.MessageRow): Outcome {
         val writer = vault.writer() ?: return Outcome.Status("retry")
         val prep = withTimeoutOrNull(PREP_TIMEOUT_MS) { downloader.prepare(id, settings.mediaMaxBytes()) } ?: return Outcome.Status("retry")
         val ok = when (prep) {
@@ -192,18 +219,24 @@ class MediaQueue(
             is Prep.Ok -> prep
         }
         val pending = files.begin(writer)
+        var copy: TeeHandle? = runCatching {
+            tee?.open(TeeInfo(row.type, row.chatId, row.isStatus, row.ephemeralSec, row.ts, ok.mime, ok.filename))
+        }.getOrNull()
         try {
             var off = 0L
             while (off < ok.size) {
                 val bytes = withTimeoutOrNull(SLICE_TIMEOUT_MS) { downloader.slice(ok.token, off, SLICE) } ?: throw IllegalStateException("media slice unavailable")
                 if (bytes.isEmpty()) throw IllegalStateException("empty media slice")
                 pending.writer.write(bytes)
+                copy?.let { h -> if (runCatching { h.write(bytes) }.isFailure) { runCatching { h.abort() }; copy = null } }
                 off += bytes.size
             }
             val (mediaId, size) = files.finish(pending, writer, "message", ok.mime, ok.filename)
+            copy?.let { h -> runCatching { h.commit() }.onFailure { runCatching { h.abort() } } }
             return Outcome.Ok(mediaId, size)
         } catch (e: Exception) {
             pending.writer.abort()
+            copy?.let { runCatching { it.abort() } }
             throw e
         } finally {
             runCatching { downloader.release(ok.token) }

@@ -145,6 +145,10 @@ private fun rememberMediaActions(session: Session, context: Context, onView: (Me
         object : MessageActions {
             override fun openMedia(msg: Message) = onView(msg)
             override fun saveMedia(msg: Message) = save(msg)
+            override fun saveToGallery(messages: List<Message>) {
+                // Session scope: keeps going when the owner leaves the chat.
+                session.scope.launch { MediaOps.saveAllToGallery(context.applicationContext, session, messages) }
+            }
             override fun openDocument(msg: Message) {
                 scope.launch { MediaOps.open(context, session, msg) }
             }

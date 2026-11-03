@@ -17,6 +17,8 @@ The server version is https://github.com/revocx35/wa_logger (local checkout `/ro
   changes both ways. Calls are impossible in WebView (no SharedArrayBuffer) — don't try again without a new WebView.
 - `core/Models.kt` mirrors wa_logger's `shared/api.d.ts`; `core/wa/Mapper.kt` and `engine/Ingest.kt` port the
   server's `wa/mapper.ts` and `wa/ingest.ts`. Keep them in step when porting fixes from the server.
+- Gallery auto-save copies plaintext by design (opt-in, off by default): keep it a tee inside `MediaQueue`, never read
+  decrypted media in the background. Blocked contacts are matched by phone number only (`engine/BlockList.kt`).
 - DB migrations in `store/Db.kt` are append-only; encrypted fields are AAD-bound to their row id.
 - ContentValues/bind args keep array references: wipe key material only after the write.
 - All DB/crypto work off the main thread (`LocalApi` and the engine use Dispatchers.IO / the ingest queue).

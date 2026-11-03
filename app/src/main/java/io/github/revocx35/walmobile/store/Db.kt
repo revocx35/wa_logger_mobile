@@ -151,6 +151,21 @@ class Db(context: Context, name: String? = NAME) : SQLiteOpenHelper(context, nam
               PRIMARY KEY (message_id, sender_id)
             )
             """,
+            // Disappearing-messages timer the message was sent with (seconds), NULL when off or unknown.
+            "ALTER TABLE messages ADD COLUMN ephemeral_sec INTEGER",
+            // Contacts the owner excluded (nothing from these phone numbers is logged) and which number a WhatsApp LID id
+            // belongs to, so the engine can match without the key.
+            """
+            CREATE TABLE blocked_contacts (
+              phone TEXT PRIMARY KEY,
+              created_at INTEGER NOT NULL
+            );
+            CREATE TABLE contact_directory (
+              id TEXT PRIMARY KEY,
+              phone TEXT NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+            """,
         )
     }
 }

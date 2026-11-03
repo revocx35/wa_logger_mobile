@@ -102,6 +102,7 @@ class LocalApi(
     private val wa: WaControl,
     private val events: EventBus,
     private val media: MediaFiles,
+    private val blocks: io.github.revocx35.walmobile.engine.BlockList = io.github.revocx35.walmobile.engine.BlockList(repo),
 ) {
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 
@@ -218,6 +219,33 @@ class LocalApi(
     suspend fun updateSettings(patch: SettingsPatch): Settings = io {
         vault.reader()
         settingsStore.update(patch).also { repo.audit("settings_changed") }
+    }
+
+    /** A contact that can be excluded from logging. */
+    data class BlockCandidate(val phone: String, val label: String?, val blocked: Boolean)
+
+    /** Everyone in the logged one-to-one chats plus numbers blocked by hand, by phone number. */
+    suspend fun blockCandidates(): List<BlockCandidate> = io {
+        vault.reader()
+        val p = presenter()
+        val blocked = blocks.list().toSet()
+        val byPhone = LinkedHashMap<String, String?>()
+        for (chat in repo.listUserChats()) {
+            val phone = blocks.phoneOf(chat.id) ?: continue
+            val label = p.chatName(chat).takeIf { it != phone && it != chat.id.substringBefore('@') }
+            if (byPhone[phone] == null) byPhone[phone] = label
+        }
+        for (ph in blocked) if (ph !in byPhone) byPhone[ph] = null
+        byPhone.map { (phone, label) -> BlockCandidate(phone, label, phone in blocked) }.sortedWith(compareBy({ it.label == null }, { it.label?.lowercase() ?: it.phone }))
+    }
+
+    /** Replaces the block list (phone numbers; invalid ones are rejected). Messages already logged stay. */
+    suspend fun setBlocked(phones: List<String>) = io {
+        vault.reader()
+        val clean = phones.map { io.github.revocx35.walmobile.engine.normalizePhone(it) ?: throw ApiException.validation("“$it” is not a phone number (digits with country code).") }.toSet()
+        if (clean.size > 500) throw ApiException.validation("At most 500 blocked contacts.")
+        blocks.replace(clean)
+        repo.audit("blocked_changed", "${clean.size}")
     }
 
     suspend fun audit(before: Long? = null): List<AuditEntry> = io {

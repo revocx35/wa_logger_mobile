@@ -315,6 +315,61 @@ class IngestTest {
     }
 
     @Test
+    fun storesDisappearingTimerAndBackfillsIt(): Unit = runBlocking {
+        val id = h.ingest.message(text("E1", "hi", "\"ephemeralDuration\":86400"), Source.Live)!!
+        assertEquals(86400, h.repo.getMessage(id)!!.ephemeralSec)
+        val plain = h.ingest.message(text("E2", "no timer"), Source.Live)!!
+        assertNull(h.repo.getMessage(plain)!!.ephemeralSec)
+        // Logged before the flag existed: gets it when seen again.
+        val old = h.ingest.message(text("E3", "old"), Source.Live)!!
+        assertNull(h.repo.getMessage(old)!!.ephemeralSec)
+        h.ingest.message(text("E3", "old", "\"ephemeralDuration\":604800"), Source.History)
+        assertEquals(604800, h.repo.getMessage(old)!!.ephemeralSec)
+        h.vault.unlock(TEST_PASSWORD)
+        assertEquals(604800, h.local.message(old).disappearingSec)
+    }
+
+    @Test
+    fun blockedContactsAreNotLogged(): Unit = runBlocking {
+        h.ingest.message(text("B0", "before"), Source.Live)
+        h.ingest.blocks.replace(listOf("+90 555 111 22 33", "garbage"))
+        assertEquals(listOf("905551112233"), h.ingest.blocks.list())
+        // Their 1:1 chat, and their messages in a group.
+        assertNull(h.ingest.message(text("B1", "blocked"), Source.Live))
+        val inGroup = raw("""{"id":${rid("B2", GROUP, false, CHAT)},"type":"chat","body":"hi group","t":1700000001,"from":"$GROUP","author":"$CHAT"}""")
+        assertNull(h.ingest.message(inGroup, Source.Live))
+        // Somebody else in the group is fine; so are my own messages in the group.
+        val other = raw("""{"id":${rid("B3", GROUP, false, "905559998877@c.us")},"type":"chat","body":"ok","t":1700000002,"from":"$GROUP","author":"905559998877@c.us"}""")
+        assertNotNull(h.ingest.message(other, Source.Live))
+        assertTrue(h.ingest.isChatBlocked(CHAT))
+        assertFalse(h.ingest.isChatBlocked(GROUP))
+        // Updates to an already logged message of a blocked contact are not recorded either.
+        val before = h.repo.listMessagesBefore(CHAT, null, 10).single()
+        h.ingest.ack(before.id, 3)
+        assertEquals(1, h.repo.getMessage(before.id)!!.ack)
+        // Unblocking logs again.
+        h.ingest.blocks.replace(emptyList())
+        assertNotNull(h.ingest.message(text("B4", "again"), Source.Live))
+    }
+
+    @Test
+    fun blockedLidIsMatchedThroughItsNumber(): Unit = runBlocking {
+        val lid = "9988776655@lid"
+        val lidApi = object : PageApi {
+            override suspend fun chatInfo(chatId: String) = ChatLite(chatId, "x", null, false, false, false)
+            override suspend fun contactInfo(id: String) = ContactInfo("Ali", null, "+905551112233", false, false)
+        }
+        val ingest = Ingest(h.repo, h.vault, h.settings, h.events, lidApi, object : MediaSink {
+            override fun enqueue(messageId: String, priority: Priority) {}
+        })
+        ingest.blocks.replace(listOf("905551112233"))
+        val msg = raw("""{"id":${rid("L9", lid)},"type":"chat","body":"via lid","t":1700000003,"from":"$lid"}""")
+        // The number is looked up once and then matches.
+        assertNull(ingest.message(msg, Source.Live))
+        assertEquals("905551112233", ingest.blocks.phoneOf(lid))
+    }
+
+    @Test
     fun writesWhileLocked(): Unit = runBlocking {
         h.vault.lock()
         assertEquals(VaultState.Locked, h.vault.state.value)

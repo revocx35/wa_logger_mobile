@@ -191,6 +191,14 @@ class MapperTest {
     }
 
     @Test
+    fun disappearingTimer() {
+        val key = id(false, "905551112233@c.us", "D1")
+        assertEquals(86400, mapMessage(base(""""id":$key,"type":"chat","body":"x","ephemeralDuration":86400""")).ephemeralSec)
+        assertEquals(null, mapMessage(base(""""id":$key,"type":"chat","body":"x","ephemeralDuration":0""")).ephemeralSec)
+        assertEquals(null, mapMessage(base(""""id":$key,"type":"chat","body":"x"""")).ephemeralSec)
+    }
+
+    @Test
     fun rebuildsKeysWithoutSerialized() {
         val inGroup = mapMessage(raw("""{"id":{"fromMe":false,"remote":"120363@g.us","id":"ABC","participant":{"_serialized":"123@lid"}},"type":"chat","body":"x","t":1}"""))
         assertEquals("false_120363@g.us_ABC_123@lid", inGroup.id)

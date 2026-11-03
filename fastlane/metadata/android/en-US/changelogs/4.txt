@@ -1,0 +1,1 @@
+Save new photos to your gallery automatically (optional, also only from disappearing-message chats), select several photos/videos and save them at once, and block contacts from being logged. Resumes cleanly after WhatsApp Web reloads itself.

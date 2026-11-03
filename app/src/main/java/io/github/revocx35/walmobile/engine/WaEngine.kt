@@ -169,9 +169,11 @@ class WaEngine(
         }
     }
 
+    /** The owner's block list, shared with the settings screen. */
+    val blocks = BlockList(repo)
     val ingest = Ingest(repo, vault, settings, events, pageApi, object : MediaSink {
         override fun enqueue(messageId: String, priority: Priority) = media.enqueue(messageId, priority)
-    })
+    }, blocks = blocks)
     val media = MediaQueue(repo, vault, settings, events, files, downloader, scope)
     private val sync = Sync(repo, settings, ingest, syncApi, { p -> onSyncProgress(p) }, { block -> serial(block) })
     private val avatars = Avatars(repo, vault, files, events, http) { chatId ->
@@ -592,7 +594,17 @@ class WaEngine(
     }
 
     private suspend fun onReady(page: Int, me: JsonObject?) {
-        if (page == readyPage) return
+        if (page == readyPage) {
+            // A second "ready" on the same page = WhatsApp Web reloaded itself (it does when it updates). If the state
+            // fell out of "linked" meanwhile, media downloads would stay stopped: bring everything back.
+            if (_status.value.state !in linkedStates && _status.value.state != WaState.Disconnected) {
+                audit("wa_ready", "reload")
+                setState(WaState.Ready)
+                media.resume()
+                withContext(Dispatchers.IO) { media.restorePending() }
+            }
+            return
+        }
         readyPage = page
         _qr.value = null
         val id = me?.str("id")

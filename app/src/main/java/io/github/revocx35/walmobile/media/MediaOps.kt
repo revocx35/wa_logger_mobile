@@ -3,7 +3,11 @@ package io.github.revocx35.walmobile.media
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.ContentValues
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import io.github.revocx35.walmobile.core.Message
@@ -24,20 +28,21 @@ import java.util.UUID
 object MediaOps {
     private const val OPEN_DIR = "open"
 
-    fun defaultName(msg: Message): String {
-        val m = msg.media
-        m?.filename?.let { safeName(it) }?.takeIf { it.isNotBlank() }?.let { return it }
+    fun defaultName(msg: Message): String = defaultName(msg.type, msg.ts, msg.media?.mime, msg.media?.filename)
+
+    fun defaultName(type: MessageType, ts: Long, mime: String?, filename: String?): String {
+        filename?.let { safeName(it) }?.takeIf { it.isNotBlank() }?.let { return it }
         val ext = when {
-            m?.mime?.startsWith("image/jpeg") == true -> "jpg"
-            m?.mime?.startsWith("image/png") == true -> "png"
-            m?.mime?.startsWith("image/webp") == true -> "webp"
-            m?.mime?.startsWith("video/mp4") == true -> "mp4"
-            m?.mime?.startsWith("audio/ogg") == true -> "ogg"
-            m?.mime?.startsWith("audio/mpeg") == true -> "mp3"
-            m?.mime?.startsWith("audio/mp4") == true -> "m4a"
-            else -> m?.mime?.substringAfter('/')?.substringBefore(';')?.takeIf { it.length in 1..5 } ?: "bin"
+            mime?.startsWith("image/jpeg") == true -> "jpg"
+            mime?.startsWith("image/png") == true -> "png"
+            mime?.startsWith("image/webp") == true -> "webp"
+            mime?.startsWith("video/mp4") == true -> "mp4"
+            mime?.startsWith("audio/ogg") == true -> "ogg"
+            mime?.startsWith("audio/mpeg") == true -> "mp3"
+            mime?.startsWith("audio/mp4") == true -> "m4a"
+            else -> mime?.substringAfter('/')?.substringBefore(';')?.takeIf { it.length in 1..5 } ?: "bin"
         }
-        val kind = when (msg.type) {
+        val kind = when (type) {
             MessageType.Image -> "photo"
             MessageType.Video, MessageType.Gif -> "video"
             MessageType.Ptt -> "voice"
@@ -45,7 +50,7 @@ object MediaOps {
             MessageType.Sticker -> "sticker"
             else -> "document"
         }
-        return "wa_$kind-${msg.ts}.$ext"
+        return "wa_$kind-$ts.$ext"
     }
 
     private fun safeName(name: String): String = name.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[\\u0000-\\u001f\\u007f\"*:<>?|]"), "_").take(150)
@@ -85,6 +90,82 @@ object MediaOps {
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(context, "No app on this phone can open this file. Use Save instead.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /**
+     * A new entry in the shared gallery (MediaStore, no storage permission, Android 10+): photos in Pictures/wa_logger,
+     * videos and GIFs in Movies/wa_logger. Write to [out], then [commit]; [abort] removes the half-written entry.
+     */
+    class GalleryFile(private val context: Context, type: MessageType, ts: Long, mime: String?, filename: String?) {
+        private val resolver = context.contentResolver
+        private val uri: Uri
+        val out: OutputStream
+
+        init {
+            if (Build.VERSION.SDK_INT < 29) throw IOException("needs Android 10")
+            val video = type != MessageType.Image
+            val collection = if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY) else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val m = mime?.substringBefore(';')?.trim()?.takeIf { it.startsWith(if (video) "video/" else "image/") } ?: if (video) "video/mp4" else "image/jpeg"
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, defaultName(type, ts, m, filename))
+                put(MediaStore.MediaColumns.MIME_TYPE, m)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, (if (video) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES) + "/wa_logger")
+                put(MediaStore.MediaColumns.DATE_TAKEN, ts)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            uri = resolver.insert(collection, values) ?: throw IOException("cannot create file")
+            out = try {
+                resolver.openOutputStream(uri, "w") ?: throw IOException("cannot write")
+            } catch (e: Throwable) {
+                runCatching { resolver.delete(uri, null, null) }
+                throw e
+            }
+        }
+
+        fun commit() {
+            out.close()
+            resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        }
+
+        fun abort() {
+            runCatching { out.close() }
+            runCatching { resolver.delete(uri, null, null) }
+        }
+    }
+
+    /** Saves one downloaded photo/video/GIF (decrypted) into the shared gallery. */
+    suspend fun saveToGallery(context: Context, session: Session, msg: Message) {
+        withContext(Dispatchers.IO) {
+            val g = GalleryFile(context, msg.type, msg.ts, msg.media?.mime, null)
+            try {
+                download(session, msg, g.out)
+                g.commit()
+            } catch (e: Throwable) {
+                g.abort()
+                throw e
+            }
+        }
+    }
+
+    /** "Save selected": one after another, then reports the result. Never throws. */
+    suspend fun saveAllToGallery(context: Context, session: Session, messages: List<Message>) {
+        if (Build.VERSION.SDK_INT < 29) {
+            Toast.makeText(context, "Saving several files at once needs Android 10 or newer.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(context, "Saving ${messages.size} to the gallery…", Toast.LENGTH_SHORT).show()
+        var failed = 0
+        for (m in messages) {
+            try {
+                saveToGallery(context, session, m)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                failed++
+            }
+        }
+        val ok = messages.size - failed
+        val text = if (failed == 0) "Saved $ok to the gallery (wa_logger album)." else "Saved $ok of ${messages.size}; $failed could not be saved."
+        Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     }
 
     /** Deletes temporary copies from earlier "Open" actions. */

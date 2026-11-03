@@ -63,9 +63,12 @@ import io.github.revocx35.walmobile.core.MessageType
 import io.github.revocx35.walmobile.core.WaText
 import io.github.revocx35.walmobile.ui.LocalFormatter
 import io.github.revocx35.walmobile.ui.LocalMessageActions
+import io.github.revocx35.walmobile.ui.LocalSelection
+import io.github.revocx35.walmobile.ui.MessageSelection
 import io.github.revocx35.walmobile.ui.MessageActions
 import io.github.revocx35.walmobile.ui.LocalSender
 import io.github.revocx35.walmobile.ui.components.Avatar
+import io.github.revocx35.walmobile.ui.components.selectableForMenu
 import io.github.revocx35.walmobile.ui.components.Composer
 import io.github.revocx35.walmobile.ui.components.MessageMenu
 import io.github.revocx35.walmobile.ui.components.NewChatDialog
@@ -221,6 +224,7 @@ fun ChatPane(
     modifier: Modifier = Modifier,
     /** Why sending is not possible right now (e.g. WhatsApp disconnected); null = can send. */
     sendDisabledReason: String? = null,
+    selection: MessageSelection = remember(state.chatId) { MessageSelection() },
 ) {
     val c = Wa.colors
     val fmt = LocalFormatter.current
@@ -349,9 +353,26 @@ fun ChatPane(
             .collect { if (state.nextAfter != null) state.loadNewer() }
     }
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalMessageActions provides actions) {
+    androidx.activity.compose.BackHandler(enabled = selection.active) { selection.clear() }
+
+    androidx.compose.runtime.CompositionLocalProvider(LocalMessageActions provides actions, LocalSelection provides selection) {
         Column(modifier.background(c.chatBg)) {
-            Row(
+            if (selection.active) {
+                // Selection mode replaces the header, like WhatsApp.
+                Row(
+                    Modifier.fillMaxWidth().background(c.head).statusBarsPadding().height(60.dp).padding(start = 4.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    IconBtn(WaIcons.close, "Cancel selection", selection::clear)
+                    Text("${selection.count} selected", style = WaType.chatName, color = c.text, modifier = Modifier.weight(1f), maxLines = 1)
+                    WaButton("Select all", { selection.selectAll(state.messages) }, tiny = true, style = BtnStyle.Ghost)
+                    IconBtn(WaIcons.download, "Save to gallery", {
+                        actions.saveToGallery(selection.messages)
+                        selection.clear()
+                    }, tint = c.accent)
+                }
+            } else Row(
                 Modifier.fillMaxWidth().background(c.head).statusBarsPadding().height(60.dp).padding(start = if (onBack != null) 4.dp else 16.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -479,6 +500,7 @@ fun ChatPane(
                 },
                 onReact = { e -> act { sender?.react(m.id, e) } },
                 onRevoke = { act { sender?.revoke(m.id) } },
+                onSelect = if (selectableForMenu(m)) ({ selection.toggle(m) }) else null,
                 onClose = { menuFor = null },
             )
         }

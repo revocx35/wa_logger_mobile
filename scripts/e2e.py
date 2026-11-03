@@ -124,7 +124,7 @@ def main():
     ui.adb("uninstall", PKG, check=False)
     ui.adb("install", APK)
     ui.shell(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS", check=False)
-    ui.set_prefs(secure_screen=False, fake_wa=True)
+    ui.set_prefs(secure_screen=False, fake_wa=True, autosave=True)
     ui.adb("logcat", "-c")
     ui.clear_crash_log()
     ui.start()
@@ -192,6 +192,28 @@ def main():
     rgb = pixel_at(shot, x, y)
     if abs(rgb[0] - 0) > 12 or abs(rgb[1] - 168) > 12 or abs(rgb[2] - 132) > 12:
         raise UiError(f"downloaded image not shown (pixel {rgb})")
+
+    step("auto-save: the downloaded photo was copied to Pictures/wa_logger")
+    listing = ""
+    for _ in range(10):
+        listing = ui.shell("ls -l /sdcard/Pictures/wa_logger/ 2>/dev/null", check=False)
+        if ".png" in listing or ".jpg" in listing:
+            break
+        time.sleep(1)
+    if ".png" not in listing and ".jpg" not in listing:
+        raise UiError(f"photo not auto-saved: {listing!r}")
+
+    step("multi-select: long-press the photo, Select, save it to the gallery again")
+    ui.find(desc="Deniz kenarı", timeout=10)
+    x, y = ui.center(ui.find(desc="Deniz kenarı", timeout=10))
+    ui.shell(f"input swipe {x} {y} {x} {y} 900")
+    ui.tap(text="Select")
+    expect_text(text="1 selected", timeout=10)
+    ui.tap(desc="Save to gallery")
+    time.sleep(3)
+    after = ui.shell("ls /sdcard/Pictures/wa_logger/ | wc -l", check=False).strip()
+    if int(after or 0) < 2:
+        raise UiError(f"multi-select save did not add a file ({after})")
 
     step("voice note plays (decrypting media source)")
     ui.tap(text="Play")

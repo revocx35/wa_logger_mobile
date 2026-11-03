@@ -84,6 +84,7 @@ data class MessageRow(
     val isViewOnce: Boolean,
     val isForwarded: Boolean,
     val isStatus: Boolean,
+    val ephemeralSec: Int?,
     val ack: Int?,
     val deletedAt: Long?,
     val deletedBy: String?,
@@ -140,6 +141,7 @@ internal class MessageCols(c: Cursor) {
     val isViewOnce = c.getColumnIndexOrThrow("is_view_once")
     val isForwarded = c.getColumnIndexOrThrow("is_forwarded")
     val isStatus = c.getColumnIndexOrThrow("is_status")
+    val ephemeralSec = c.getColumnIndexOrThrow("ephemeral_sec")
     val ack = c.getColumnIndexOrThrow("ack")
     val deletedAt = c.getColumnIndexOrThrow("deleted_at")
     val deletedBy = c.getColumnIndexOrThrow("deleted_by")
@@ -172,6 +174,7 @@ internal class MessageCols(c: Cursor) {
         isViewOnce = c.bool(isViewOnce),
         isForwarded = c.bool(isForwarded),
         isStatus = c.bool(isStatus),
+        ephemeralSec = c.int(ephemeralSec),
         ack = c.int(ack),
         deletedAt = c.long(deletedAt),
         deletedBy = c.str(deletedBy),

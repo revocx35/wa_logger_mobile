@@ -46,6 +46,10 @@ class Sync(
                     done++
                     continue
                 }
+                if (ingest.isChatBlocked(chat.id)) {
+                    done++
+                    continue
+                }
                 serial { ingest.upsertChatInfo(chat) }
                 if (limit > 0) {
                     try {
@@ -73,6 +77,7 @@ class Sync(
             val targets = mutableListOf<ChatLite>()
             chats.forEachIndexed { i, chat ->
                 if (chat.id == "status@broadcast" && !logStatus) return@forEachIndexed
+                if (ingest.isChatBlocked(chat.id)) return@forEachIndexed
                 val stored = repo.getChat(chat.id)
                 if (stored == null || stored.removedAt != null) serial { ingest.upsertChatInfo(chat) }
                 val moved = stored == null || (chat.timestamp ?: 0) > (stored.lastTs ?: 0)

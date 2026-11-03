@@ -58,6 +58,7 @@ import io.github.revocx35.walmobile.core.SendMediaKind
 import io.github.revocx35.walmobile.core.WaText
 import io.github.revocx35.walmobile.core.userMessage
 import io.github.revocx35.walmobile.media.VoiceRecorder
+import io.github.revocx35.walmobile.ui.MessageSelection
 import io.github.revocx35.walmobile.ui.MessageSender
 import io.github.revocx35.walmobile.ui.OutgoingFile
 import io.github.revocx35.walmobile.ui.SEND_MAX_BYTES
@@ -358,7 +359,7 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "
 private const val EDIT_WINDOW_MS = 15 * 60_000L
 private const val REVOKE_WINDOW_MS = 2 * 24 * 3600_000L
 
-/** Long-press menu of a message: reactions, reply, copy, edit, delete for everyone (and select, where offered). */
+/** Long-press menu of a message: reactions, reply, copy, edit, delete for everyone, select (photos/videos). */
 @Composable
 fun MessageMenu(
     msg: Message,
@@ -367,7 +368,7 @@ fun MessageMenu(
     onEdit: () -> Unit,
     onReact: (String) -> Unit,
     onRevoke: () -> Unit,
-    onSelect: (() -> Unit)? = null,
+    onSelect: (() -> Unit)?,
     onClose: () -> Unit,
 ) {
     val c = Wa.colors
@@ -438,6 +439,9 @@ private fun MenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
         Text(label, style = WaType.base, color = if (danger) c.danger else c.text)
     }
 }
+
+/** Whether the menu should offer "Select" (photos/videos that can be saved to the gallery). */
+fun selectableForMenu(msg: Message): Boolean = MessageSelection.selectable(msg)
 
 /** Start a chat with any number on WhatsApp. */
 @Composable

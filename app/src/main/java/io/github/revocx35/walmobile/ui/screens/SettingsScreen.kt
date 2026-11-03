@@ -123,8 +123,8 @@ fun SettingsScreen(deps: SettingsDeps) {
     val scope = rememberCoroutineScope()
     val positions = remember { mutableStateMapOf<String, Int>() }
     val toc = listOf(
-        "password" to "Password", "unlock" to "Unlock", "recovery" to "Recovery key", "logging" to "Logging", "whatsapp" to "WhatsApp",
-        "background" to "Background", "storage" to "Storage", "audit" to "Security log", "danger" to "Danger zone", "app" to "App",
+        "password" to "Password", "unlock" to "Unlock", "recovery" to "Recovery key", "logging" to "Logging", "blocked" to "Blocked contacts", "whatsapp" to "WhatsApp",
+        "background" to "Background", "gallery" to "Gallery", "storage" to "Storage", "audit" to "Security log", "danger" to "Danger zone", "app" to "App",
     )
     fun Modifier.anchor(id: String) = onGloballyPositioned { positions[id] = it.positionInParent().y.toInt() }
 
@@ -142,8 +142,10 @@ fun SettingsScreen(deps: SettingsDeps) {
             Column(Modifier.anchor("unlock")) { UnlockSection(deps) }
             Column(Modifier.anchor("recovery")) { RecoverySection(deps) }
             Column(Modifier.anchor("logging")) { LoggingSection(deps) }
+            Column(Modifier.anchor("blocked")) { BlockedSection(deps) }
             Column(Modifier.anchor("whatsapp")) { WhatsAppSection(deps) }
             Column(Modifier.anchor("background")) { BackgroundSection(deps) }
+            Column(Modifier.anchor("gallery")) { deps.graph?.let { AutoSaveSettings(it) } }
             Column(Modifier.anchor("storage")) { StorageSection(deps) }
             Column(Modifier.anchor("audit")) { AuditSection(deps) }
             Column(Modifier.anchor("danger")) { DangerSection(deps) }
@@ -225,6 +227,52 @@ private fun RecoverySection(d: SettingsDeps) {
                 }, busy = op.busy, enabled = password.isNotEmpty())
             }
         }
+    }
+}
+
+/** Contacts that are not logged, by phone number (engine/BlockList.kt). Already logged messages stay. */
+@Composable
+private fun BlockedSection(d: SettingsDeps) {
+    var items by remember { mutableStateOf<List<LocalApi.BlockCandidate>?>(null) }
+    var query by remember { mutableStateOf("") }
+    var number by remember { mutableStateOf("") }
+    val op = rememberOp()
+    LaunchedEffect(Unit) { items = runCatching { d.api.blockCandidates() }.getOrNull() }
+    fun save(list: List<LocalApi.BlockCandidate>) = op.run("Saved.") {
+        d.api.setBlocked(list.filter { it.blocked }.map { it.phone })
+        items = d.api.blockCandidates()
+    }
+    SectionCard("Blocked contacts") {
+        MutedText(
+            "Nothing from these contacts is logged: no messages, reactions or media, in their chat or in groups. Matching is by phone number, so a renamed contact stays blocked. Messages logged before stay until you delete them.",
+            style = WaType.small,
+        )
+        val cur = items
+        if (cur == null) {
+            Spinner()
+            return@SectionCard
+        }
+        Column(Modifier.widthIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            WaTextField(number, { number = it.filter { ch -> ch.isDigit() || ch == '+' || ch == ' ' }.take(24) }, "Add a number (with country code)", keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done)
+            WaButton("Block this number", {
+                val n = io.github.revocx35.walmobile.engine.normalizePhone(number)
+                if (n == null) {
+                    op.error = "Enter the phone number with its country code."
+                } else {
+                    save(cur.filter { it.phone != n } + LocalApi.BlockCandidate(n, null, true))
+                    number = ""
+                }
+            }, busy = op.busy, enabled = number.isNotBlank(), style = BtnStyle.Ghost)
+            WaTextField(query, { query = it }, "Search your contacts")
+        }
+        val q = query.trim().lowercase()
+        val shown = cur.filter { it.blocked || q.isNotEmpty() }.filter { q.isEmpty() || it.phone.contains(q) || it.label?.lowercase()?.contains(q) == true }.take(60)
+        if (shown.isEmpty()) MutedText(if (q.isEmpty()) "No contacts are blocked." else "No contact matches.", style = WaType.small)
+        for (cand in shown) {
+            CheckRow(cand.blocked, { on -> save(cur.map { x -> if (x.phone == cand.phone) x.copy(blocked = on) else x }) }, (cand.label?.let { l -> "$l · " } ?: "") + "+" + cand.phone, enabled = !op.busy)
+        }
+        ErrorNote(op.error)
+        OkNote(op.ok)
     }
 }
 
@@ -324,6 +372,36 @@ private fun BackgroundSection(d: SettingsDeps) {
         SwitchRow(autostart, { graph?.prefs?.setAutostart(it) }, "Start logging when the phone starts")
         SwitchRow(keepAwake, { graph?.prefs?.setKeepAwake(it) }, "Keep processing with the screen off (uses more battery)")
         MutedText("Some phones (Xiaomi, Huawei, Samsung, OnePlus…) have extra battery savers that stop background apps anyway; see dontkillmyapp.com for your model.", style = WaType.small)
+    }
+}
+
+/** "Save new photos to this phone" (media/AutoSave.kt). */
+@Composable
+private fun AutoSaveSettings(graph: AppGraph) {
+    val prefs = graph.prefs
+    val on by prefs.autoSave.collectAsState()
+    val videos by prefs.autoSaveVideos.collectAsState()
+    val status by prefs.autoSaveStatus.collectAsState()
+    val onlyDisappearing by prefs.autoSaveOnlyDisappearing.collectAsState()
+    val saved by prefs.autoSaveCount.collectAsState()
+    SectionCard("Gallery") {
+        if (!io.github.revocx35.walmobile.media.AutoSaver.SUPPORTED) {
+            MutedText("Saving new photos to this phone automatically needs Android 10 or newer.", style = WaType.small)
+            return@SectionCard
+        }
+        SwitchRow(on, { prefs.setAutoSave(it) }, "Save new photos to this phone automatically")
+        if (on) {
+            CheckRow(onlyDisappearing, { prefs.setAutoSaveOnlyDisappearing(it) }, "Only from chats with disappearing messages (WhatsApp doesn't save those to your gallery)")
+            CheckRow(videos, { prefs.setAutoSaveVideos(it) }, "Also save videos and GIFs")
+            CheckRow(status, { prefs.setAutoSaveStatus(it) }, "Include status updates (stories)")
+            MutedText("Saved so far: $saved", style = WaType.small)
+        }
+        MutedText(
+            "Photos go to Pictures/wa_logger, videos to Movies/wa_logger. Only media downloaded after you turn this on is saved, " +
+                "even while the app is locked. Saved copies are not encrypted: your gallery, other apps with photo access and cloud " +
+                "photo backup can see them.",
+            style = WaType.small,
+        )
     }
 }
 

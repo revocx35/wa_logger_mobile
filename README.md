@@ -27,6 +27,12 @@ _(Screenshots show demo data.)_
   above the chat list). Long-press a message for its menu. Everything goes out through the app's own WhatsApp Web
   session, with WhatsApp Web's own send functions, and is logged like everything else. Read receipts are sent only if
   you turn them on (Settings → Logging).
+- **Gallery** (0.3.0): optional automatic copy of new photos (videos/GIFs and status updates on request, or only from
+  chats with disappearing messages, which WhatsApp never saves to the gallery) into Pictures/Movies `wa_logger` the moment
+  they are downloaded, even while the app is locked. Long-press a photo/video → **Select** to save several at once.
+  The copies are not encrypted (Settings → Gallery says so); off by default.
+- **Blocked contacts** (0.3.0): Settings → Blocked contacts excludes people (by phone number) from logging: no messages,
+  reactions or media, in their chat or in groups.
 - **No calls:** Android's WebView can't run WhatsApp Web's calling (it needs `SharedArrayBuffer`, which WebView never
   enables), so incoming calls ring only on your phone's WhatsApp.
 - **All message types** except view-once media: text with WhatsApp formatting, photos, videos, GIFs, voice notes,

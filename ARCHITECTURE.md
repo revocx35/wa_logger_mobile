@@ -143,6 +143,9 @@ deleted feed, bounded decrypt-and-scan search), so the UI code needed almost no 
 `walm://media/<id>`, served by `MediaAccess` to Coil (in-memory only) and ExoPlayer (chunk-wise decryption,
 seeking). "Save" and "Open with" decrypt to the chosen file / a cache copy deleted at next start.
 
+Migrations: 1 = base schema, 2 = `messages.ephemeral_sec` (disappearing-messages timer, `Message.disappearingSec`),
+3 = `blocked_contacts(phone)` and `contact_directory(id, phone)` (number behind a LID id, so the engine matches without the key).
+
 ## 8. UI
 
 The screens of wa_logger's Android client (Compose, the web's CSS tokens and icons, 900 dp two-pane breakpoint),
@@ -208,3 +211,21 @@ the README also shows) is `fastlane/metadata/android/en-US/`.
   `missing_shared_array_buffer`. Only the Chromium command-line flag `--enable-features=SharedArrayBuffer` changes that,
   and WebView reads command-line flags only on debuggable (userdebug) devices; the WebView DevTools flag list of
   normal phones has no such switch (checked; `site-per-process` does not help).
+
+## 12. Parity with the wa_logger server (0.3.0)
+
+Ported from the server after 0.2.0: disappearing-messages flag (bridge passes `ephemeralDuration`; Mapper/Ingest/DB);
+second "ready" on the same page after WhatsApp Web reloads itself brings the state back to Ready and re-queues media
+(`WaEngine.onReady`); chat multi-select (long-press → Select, `ui/Selection.kt`) saving to the gallery; **auto-save**
+and **blocked contacts** below. Not applicable to a serverless app: multi-user/admin, API tokens, authentik sign-in,
+calls and call recording (no calls in WebView, §11), ZIP download (replaced by gallery save).
+
+* **Auto-save** (`media/AutoSave.kt`, Prefs `autosave*`, off by default, Android 10+): `MediaQueue` offers every download
+  to a `MediaTee`; `AutoSaver` (policy `AutoSavePolicy`: photos, optionally videos/GIFs, status updates, only
+  disappearing chats) streams the plaintext slices into a MediaStore entry (`MediaOps.GalleryFile`, Pictures/Movies
+  `wa_logger`) while the encrypted copy is written. The bytes are in memory then anyway, so it works with the app locked and
+  needs no key; a failing copy is aborted and never affects the encrypted file. The copy is deliberately unencrypted.
+* **Blocked contacts** (`engine/BlockList.kt`, `Ingest.blockedMessage/idBlocked/rowBlocked`, `Sync` skips blocked chats):
+  matched by phone digits (a LID is resolved once via the page's contact info and remembered in `contact_directory`; an
+  unresolvable LID counts as blocked for 5 minutes). Already-logged messages stay; later updates to them are ignored.
+  Settings → Blocked contacts (`LocalApi.blockCandidates/setBlocked`) lists logged one-to-one chats by name.

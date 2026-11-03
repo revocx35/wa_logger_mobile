@@ -136,6 +136,11 @@ class Ui:
         time.sleep(0.2)
 
     def type_text(self, value):
+        # Long strings are typed in pieces: on a slow emulator `input text` drops characters of long ones.
+        if len(value) > 16:
+            for i in range(0, len(value), 16):
+                self.type_text(value[i:i + 16])
+            return
         # `input text` needs spaces as %s and some characters escaped.
         esc = value.replace("%", "\\%").replace(" ", "%s").replace("'", "\\'").replace('"', '\\"').replace("&", "\\&").replace("(", "\\(").replace(")", "\\)").replace("<", "\\<").replace(">", "\\>").replace(";", "\\;").replace("|", "\\|")
         self.shell(f"input text {esc}")

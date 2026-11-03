@@ -64,6 +64,7 @@ fun interface DeletionListener {
 
 private const val CHAT_REFRESH_MS = 6 * 3600_000L
 private const val CONTACT_REFRESH_MS = 24 * 3600_000L
+private const val UNRESOLVED_RETRY_MS = 5 * 60_000L
 
 /**
  * Turns WhatsApp events into encrypted rows (port of the server's `wa/ingest.ts`). Every handler is an
@@ -78,9 +79,13 @@ class Ingest(
     private val api: PageApi,
     private val media: MediaSink,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Contacts the owner excluded from logging (Settings → Blocked contacts). */
+    val blocks: BlockList = BlockList(repo),
 ) {
     private val chatSeen = HashMap<String, Long>()
     private val contactSeen = HashMap<String, Long>()
+    private val unresolvedAt = HashMap<String, Long>()
+
     @Volatile var deletionListener: DeletionListener? = null
 
     private val writer: DataWriter? get() = vault.writer()
@@ -88,6 +93,7 @@ class Ingest(
     fun resetCaches() {
         chatSeen.clear()
         contactSeen.clear()
+        unresolvedAt.clear()
     }
 
     /* ------------------------------------------------------------ chats */
@@ -108,6 +114,7 @@ class Ingest(
     /** From history/reconcile with already-fetched chat info. */
     fun upsertChatInfo(chat: ChatLite) {
         val w = writer ?: return
+        if (blocks.blocks(chat.id)) return
         val t = now()
         chatSeen[chat.id] = t
         val kind = chatKind(chat.id)
@@ -121,6 +128,7 @@ class Ingest(
         if (!force && seen != null && t - seen < CONTACT_REFRESH_MS) return
         contactSeen[id] = t
         val info = runCatching { api.contactInfo(id) }.getOrNull()
+        if (info?.isMe != true) blocks.record(id, info?.phone)
         repo.upsertContact(
             id,
             w.encrypt(F.contactName(id), info?.name),
@@ -131,6 +139,39 @@ class Ingest(
             t,
         )
     }
+
+    /* ------------------------------------------------------ blocked contacts */
+
+    /**
+     * True when [id] belongs to a contact the owner excluded. A LID whose number isn't known yet is looked up once
+     * (and remembered by ensureContact); if it still can't be resolved it counts as blocked for a few minutes, because
+     * logging it could record a blocked contact: history and reconcile pick the message up once the number is known.
+     */
+    suspend fun idBlocked(id: String?): Boolean {
+        if (!blocks.active || id.isNullOrEmpty()) return false
+        if (blocks.blocks(id)) return true
+        if (!blocks.unresolved(id)) return false
+        val failed = unresolvedAt[id]
+        if (failed != null && now() - failed < UNRESOLVED_RETRY_MS) return true
+        // Only the number is wanted: nothing about a possibly blocked contact is stored.
+        runCatching { api.contactInfo(id) }.getOrNull()?.let { info -> if (!info.isMe) blocks.record(id, info.phone) }
+        if (!blocks.unresolved(id)) return blocks.blocks(id)
+        unresolvedAt[id] = now()
+        return true
+    }
+
+    /** A message belongs to a blocked contact when it is in their 1:1 chat or they sent it (in a group, too). */
+    private suspend fun blockedMessage(chatId: String, senderId: String?, fromMe: Boolean): Boolean {
+        if (!blocks.active) return false
+        if (chatKind(chatId) == ChatKind.User && idBlocked(chatId)) return true
+        return !fromMe && senderId != null && senderId != chatId && idBlocked(senderId)
+    }
+
+    /** Sync passes skip a blocked contact's chat altogether. */
+    suspend fun isChatBlocked(chatId: String): Boolean = chatKind(chatId) == ChatKind.User && idBlocked(chatId)
+
+    /** A message logged before its contact was blocked stays as it is: later updates to it are not recorded. */
+    private fun rowBlocked(row: MessageRow): Boolean = blocks.active && (blocks.blocks(row.chatId) || (!row.fromMe && blocks.blocks(row.senderId)))
 
     /* --------------------------------------------------------- messages */
 
@@ -164,6 +205,7 @@ class Ingest(
         isViewOnce = m.isViewOnce,
         isForwarded = m.isForwarded,
         isStatus = m.isStatus,
+        ephemeralSec = m.ephemeralSec,
         ack = m.ack,
         deletedAt = null,
         deletedBy = null,
@@ -181,6 +223,7 @@ class Ingest(
         val m = mapMessage(raw)
         if (m.skip) return null
         if (m.isStatus && !settings.get().logStatus) return null
+        if (blockedMessage(m.chatId, m.senderId, m.fromMe)) return null
 
         ensureChat(m.chatId)
         if (m.senderId != null && !m.fromMe) ensureContact(m.senderId!!, m.notifyName)
@@ -211,7 +254,7 @@ class Ingest(
                 id = m.id, chatId = m.chatId, senderId = m.senderId, fromMe = m.fromMe, ts = m.ts, type = "revoked",
                 bodyEnc = null, metaEnc = null, thumbEnc = null, quotedId = null, mediaId = null, mediaStatus = "none",
                 mediaAttempts = 0, mediaSize = null, mediaW = null, mediaH = null, mediaDuration = null, isViewOnce = false,
-                isForwarded = false, isStatus = m.isStatus, ack = m.ack,
+                isForwarded = false, isStatus = m.isStatus, ephemeralSec = m.ephemeralSec, ack = m.ack,
                 // Seen only as already deleted during history import: the deletion time is unknown, so use
                 // the message time rather than pretending it was deleted now.
                 deletedAt = if (source == Source.History) (m.ts.takeIf { it > 0 } ?: t) else t,
@@ -248,7 +291,7 @@ class Ingest(
                     "meta_enc" to f.metaEnc, "thumb_enc" to f.thumbEnc, "quoted_id" to f.quotedId, "media_status" to f.mediaStatus,
                     "media_attempts" to 0, "media_size" to f.mediaSize, "media_w" to f.mediaW, "media_h" to f.mediaH,
                     "media_duration" to f.mediaDuration, "is_view_once" to f.isViewOnce, "is_forwarded" to f.isForwarded,
-                    "is_status" to f.isStatus, "ack" to f.ack, "edited_at" to f.editedAt, "last_edit_key" to f.lastEditKey,
+                    "is_status" to f.isStatus, "ephemeral_sec" to f.ephemeralSec, "ack" to f.ack, "edited_at" to f.editedAt, "last_edit_key" to f.lastEditKey,
                     // A revoked stub stays flagged as deleted.
                     "deleted_at" to existing.deletedAt, "deleted_by" to existing.deletedBy, "updated_at" to t,
                 ),
@@ -267,6 +310,8 @@ class Ingest(
             patch.put("ack", m.ack)
             reason = "ack"
         }
+        // Rows logged before the disappearing-messages flag was stored get it when the message is seen again.
+        if (existing.ephemeralSec == null) m.ephemeralSec?.let { patch.put("ephemeral_sec", it) }
         // Media that failed earlier can be retried when WhatsApp offers it again.
         if (existing.mediaStatus == "failed" && m.downloadable && existing.mediaAttempts < 8) {
             patch.put("media_status", "pending")
@@ -294,6 +339,7 @@ class Ingest(
         val w = writer ?: return
         val m = mapMessage(raw)
         if (m.skip || m.revoked) return
+        if (blockedMessage(m.chatId, m.senderId, m.fromMe)) return
         val existing = repo.getMessage(m.id)
         if (existing == null) {
             // First sight of an edited message: store it and keep the previous text as history.
@@ -323,6 +369,7 @@ class Ingest(
         writer ?: return
         val after = mapMessage(afterRaw)
         if (after.id.isEmpty()) return
+        if (blockedMessage(after.chatId, after.senderId, after.fromMe)) return
         val t = now()
         var existing = repo.getMessage(after.id)
         if (beforeRaw != null) {
@@ -349,7 +396,7 @@ class Ingest(
     /** Deleted only on the owner's devices. */
     fun revokeMe(messageId: String) {
         val existing = repo.getMessage(messageId) ?: return
-        if (existing.deletedForMeAt != null) return
+        if (existing.deletedForMeAt != null || rowBlocked(existing)) return
         val t = now()
         repo.updateMessage(existing.id, values("deleted_for_me_at" to t, "updated_at" to t))
         events.emit(ServerEvent.MessageUpdate(existing.chatId, existing.id, "deleted"))
@@ -359,6 +406,7 @@ class Ingest(
         val w = writer ?: return
         if (messageId.isNullOrEmpty() || senderId.isNullOrEmpty()) return
         val existing = repo.getMessage(messageId) ?: return
+        if (rowBlocked(existing) || blocks.blocks(senderId)) return
         val e = emoji ?: ""
         var ts = timestamp?.toLong() ?: now()
         if (ts < 1_000_000_000_000L) ts *= 1000
@@ -369,7 +417,7 @@ class Ingest(
     fun ack(messageId: String?, ack: Int?) {
         if (messageId == null || ack == null) return
         val existing = repo.getMessage(messageId) ?: return
-        if (existing.ack != null && existing.ack >= ack) return
+        if ((existing.ack != null && existing.ack >= ack) || rowBlocked(existing)) return
         repo.updateMessage(existing.id, values("ack" to ack, "updated_at" to now()))
         events.emit(ServerEvent.MessageUpdate(existing.chatId, existing.id, "ack"))
     }

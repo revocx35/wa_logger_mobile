@@ -118,7 +118,7 @@
     'type', 'subtype', 't', 'body', 'caption', 'notifyName', 'isViewOnce', 'directPath', 'mimetype', 'filename',
     'size', 'width', 'height', 'duration', 'isGif', 'isLive', 'lat', 'lng', 'loc', 'clientUrl', 'vcardFormattedName',
     'pollName', 'pollSelectableOptionsCount', 'isVideoCall', 'callOutcome', 'callDuration', 'inviteGrpName',
-    'forwardingScore', 'isForwarded', 'isStatusV3', 'ack', 'latestEditSenderTimestampMs', 'quotedStanzaID', 'isNewMsg',
+    'forwardingScore', 'isForwarded', 'isStatusV3', 'ephemeralDuration', 'ack', 'latestEditSenderTimestampMs', 'quotedStanzaID', 'isNewMsg',
   ];
   var WIDS = ['from', 'to', 'author', 'quotedParticipant'];
   var WID_LISTS = ['mentionedJidList', 'recipients', 'templateParams'];

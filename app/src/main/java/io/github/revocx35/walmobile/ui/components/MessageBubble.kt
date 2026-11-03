@@ -56,6 +56,8 @@ import io.github.revocx35.walmobile.core.formatDuration
 import io.github.revocx35.walmobile.core.userMessage
 import io.github.revocx35.walmobile.ui.LocalFormatter
 import io.github.revocx35.walmobile.ui.LocalMessageActions
+import io.github.revocx35.walmobile.ui.LocalSelection
+import io.github.revocx35.walmobile.ui.MessageSelection
 import io.github.revocx35.walmobile.ui.theme.Wa
 import io.github.revocx35.walmobile.ui.theme.WaIcons
 import io.github.revocx35.walmobile.ui.theme.WaType
@@ -268,9 +270,15 @@ fun MessageBubble(msg: Message, isGroup: Boolean, showSender: Boolean, highlight
         else -> c.bubbleIn
     }
     val innerMax = maxBubbleWidth - 17.dp
+    val selection = LocalSelection.current
+    val selectable = selection != null && MessageSelection.selectable(msg)
+    val selected = selection?.isSelected(msg.id) == true
 
     Column(
-        modifier.fillMaxWidth().padding(vertical = 1.dp),
+        modifier.fillMaxWidth()
+            .then(if (selected) Modifier.background(c.accent.copy(alpha = 0.16f)) else Modifier)
+            .then(if (selection?.active == true && selectable) Modifier.clickable(onClickLabel = if (selected) "Unselect" else "Select") { selection.toggle(msg) } else Modifier)
+            .padding(vertical = 1.dp),
         horizontalAlignment = if (msg.fromMe) Alignment.End else Alignment.Start,
     ) {
         Box(
@@ -279,6 +287,7 @@ fun MessageBubble(msg: Message, isGroup: Boolean, showSender: Boolean, highlight
                 .then(if (sticker) Modifier else Modifier.shadow(1.dp, shape, ambientColor = c.shadow, spotColor = c.shadow))
                 .then(
                     when {
+                        selected -> Modifier.border(3.dp, c.accent, shape)
                         highlighted -> Modifier.border(3.dp, c.warn, shape)
                         deleted -> Modifier.border(2.dp, c.danger, shape)
                         else -> Modifier
@@ -289,10 +298,13 @@ fun MessageBubble(msg: Message, isGroup: Boolean, showSender: Boolean, highlight
                 .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = {},
+                    onClick = { if (selection?.active == true && selectable) selection.toggle(msg) },
                     onLongClickLabel = "Message options",
-                    // The message menu: reactions, reply, copy, edit, delete for everyone.
-                    onLongClick = { actions.longPress(msg) },
+                    onLongClick = {
+                        // While selecting photos/videos a long-press toggles; otherwise it opens the message menu
+                        // (reply, react, copy, edit, delete for everyone, select).
+                        if (selection?.active == true && selectable) selection.toggle(msg) else actions.longPress(msg)
+                    },
                 )
                 .padding(start = 9.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         ) {

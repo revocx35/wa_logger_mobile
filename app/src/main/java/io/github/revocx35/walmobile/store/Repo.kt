@@ -268,11 +268,11 @@ class Repo(private val helper: Db) : DataKeyStore {
     fun insertMessage(m: MessageRow): Boolean = exec(
         """INSERT OR IGNORE INTO messages (id, chat_id, sender_id, from_me, ts, type, body_enc, meta_enc, thumb_enc, quoted_id,
              media_id, media_status, media_attempts, media_size, media_w, media_h, media_duration, is_view_once, is_forwarded,
-             is_status, ack, deleted_at, deleted_by, deleted_for_me_at, edited_at, last_edit_key, source, captured_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             is_status, ephemeral_sec, ack, deleted_at, deleted_by, deleted_for_me_at, edited_at, last_edit_key, source, captured_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         m.id, m.chatId, m.senderId, m.fromMe, m.ts, m.type, m.bodyEnc, m.metaEnc, m.thumbEnc, m.quotedId,
         m.mediaId, m.mediaStatus, m.mediaAttempts, m.mediaSize, m.mediaW, m.mediaH, m.mediaDuration, m.isViewOnce, m.isForwarded,
-        m.isStatus, m.ack, m.deletedAt, m.deletedBy, m.deletedForMeAt, m.editedAt, m.lastEditKey, m.source, m.capturedAt, m.updatedAt,
+        m.isStatus, m.ephemeralSec, m.ack, m.deletedAt, m.deletedBy, m.deletedForMeAt, m.editedAt, m.lastEditKey, m.source, m.capturedAt, m.updatedAt,
     ) == 1
 
     fun updateMessage(id: String, values: ContentValues) {
@@ -371,9 +371,30 @@ class Repo(private val helper: Db) : DataKeyStore {
     /* ------------------------------------------------------------ wipe */
 
     /** Deletes all logged WhatsApp data (keeps owner, audit log, settings). Returns media paths to unlink. */
+    /* ------------------------------------------------------ blocked contacts */
+
+    fun listBlocked(): List<String> = query("SELECT phone FROM blocked_contacts ORDER BY phone") { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+
+    fun setBlocked(phones: Set<String>, now: Long) = transaction {
+        db.execSQL("DELETE FROM blocked_contacts")
+        for (p in phones) exec("INSERT INTO blocked_contacts (phone, created_at) VALUES (?, ?)", p, now)
+    }
+
+    fun getDirectoryPhone(id: String): String? = query("SELECT phone FROM contact_directory WHERE id = ?", id) { c -> if (c.moveToFirst()) c.getString(0) else null }
+
+    fun upsertDirectory(id: String, phone: String, now: Long) {
+        exec(
+            "INSERT INTO contact_directory (id, phone, updated_at) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE SET phone = excluded.phone, updated_at = excluded.updated_at",
+            id, phone, now,
+        )
+    }
+
+    /** One-to-one chats the owner can pick from. */
+    fun listUserChats(): List<ChatRow> = query("SELECT * FROM chats WHERE kind = 'user' AND removed_at IS NULL") { c -> buildList { while (c.moveToNext()) add(c.chatRow()) } }
+
     fun wipeLoggedData(): List<String> = transaction {
         val paths = allMediaPaths()
-        for (t in listOf("reactions", "message_edits", "messages", "contacts", "chats", "media")) db.execSQL("DELETE FROM $t")
+        for (t in listOf("reactions", "message_edits", "messages", "contacts", "chats", "media", "contact_directory")) db.execSQL("DELETE FROM $t")
         paths
     }
 
@@ -381,7 +402,7 @@ class Repo(private val helper: Db) : DataKeyStore {
         val MESSAGE_UPDATABLE = setOf(
             "sender_id", "from_me", "ts", "type", "body_enc", "meta_enc", "thumb_enc", "quoted_id", "media_id", "media_status",
             "media_attempts", "media_size", "media_w", "media_h", "media_duration", "is_view_once", "is_forwarded", "is_status",
-            "ack", "deleted_at", "deleted_by", "deleted_for_me_at", "edited_at", "last_edit_key", "updated_at",
+            "ack", "ephemeral_sec", "deleted_at", "deleted_by", "deleted_for_me_at", "edited_at", "last_edit_key", "updated_at",
         )
     }
 }

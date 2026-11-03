@@ -63,7 +63,10 @@ class AppGraph(val context: Context, val diagnostics: Diagnostics) {
         .build()
 
     val engine = WaEngine(context, repo, vault, settings, events, files, http, scope) { where, e -> diagnostics.recordNonFatal(where, e) }
-    val api = LocalApi(repo, vault, settings, engine, events, files)
+    init {
+        engine.media.tee = io.github.revocx35.walmobile.media.AutoSaver(context.applicationContext, prefs)
+    }
+    val api = LocalApi(repo, vault, settings, engine, events, files, engine.blocks)
     val sender = io.github.revocx35.walmobile.engine.LocalSender(
         context.applicationContext,
         { op, args, timeout -> engine.pageCall(op, args, timeout) },
