@@ -504,7 +504,10 @@
 
     Msg.on('change:type', wrap(function (msg) {
       if (msg.type !== 'revoked') return;
-      var before = msg.id && recent.get(msg.id.id);
+      // WhatsApp Web re-keys a revoked message in place: msg.id now carries the revoke stanza's id and the
+      // original key is in protocolMessageKey.
+      var orig = msg.protocolMessageKey || msg.id;
+      var before = (orig && recent.get(orig.id)) || (msg.id && recent.get(msg.id.id));
       ev('revoke', { after: ser(msg), before: before || null });
     }));
 

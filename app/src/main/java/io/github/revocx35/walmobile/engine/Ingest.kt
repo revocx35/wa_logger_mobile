@@ -229,6 +229,7 @@ class Ingest(
         if (m.senderId != null && !m.fromMe) ensureContact(m.senderId!!, m.notifyName)
 
         val t = now()
+        dropRekeyedStub(m)
         val existing = repo.getMessage(m.id)
         if (existing == null) {
             if (m.revoked) {
@@ -266,6 +267,18 @@ class Ingest(
             repo.bumpChatTs(m.chatId, m.ts, t)
             events.emit(ServerEvent.NewMessage(m.chatId, m.id))
         }
+    }
+
+    /**
+     * Versions up to 0.3.0 stored a re-keyed revoke ([MappedMessage.revokeKey]) as its own content-less "deleted before
+     * it could be logged" row next to the logged original (issue #1). Remove such a row when the revoke is seen again.
+     */
+    private fun dropRekeyedStub(m: MappedMessage) {
+        val key = m.revokeKey ?: return
+        val stub = repo.getMessage(key) ?: return
+        if (stub.type != "revoked" || stub.bodyEnc != null || stub.metaEnc != null) return
+        repo.deleteMessageRow(key)
+        events.emit(ServerEvent.MessageUpdate(stub.chatId, key, "deleted"))
     }
 
     private fun markDeleted(existing: MessageRow, by: String, t: Long) {
@@ -371,11 +384,14 @@ class Ingest(
         if (after.id.isEmpty()) return
         if (blockedMessage(after.chatId, after.senderId, after.fromMe)) return
         val t = now()
+        dropRekeyedStub(after)
         var existing = repo.getMessage(after.id)
         if (beforeRaw != null) {
             val before = mapMessage(beforeRaw)
             val target = repo.getMessage(before.id) ?: existing
-            val withAfterId = JsonObject(beforeRaw + ("id" to (afterRaw["id"] ?: beforeRaw["id"] ?: JsonPrimitive(""))))
+            // Store the original under the key the revoke points at (the original key when WhatsApp re-keyed it).
+            val afterKey = if (after.revokeKey != null) afterRaw["protocolMessageKey"] else afterRaw["id"]
+            val withAfterId = JsonObject(beforeRaw + ("id" to (afterKey ?: beforeRaw["id"] ?: JsonPrimitive(""))))
             if (target == null || (target.type == "revoked" && target.bodyEnc == null)) {
                 // Never logged (or only as a stub): store the original content first.
                 message(withAfterId, Source.Live)

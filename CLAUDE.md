@@ -19,6 +19,8 @@ The server version is https://github.com/revocx35/wa_logger (local checkout `/ro
   server's `wa/mapper.ts` and `wa/ingest.ts`. Keep them in step when porting fixes from the server.
 - Gallery auto-save copies plaintext by design (opt-in, off by default): keep it a tee inside `MediaQueue`, never read
   decrypted media in the background. Blocked contacts are matched by phone number only (`engine/BlockList.kt`).
+- A deleted-for-everyone message has a new id (WhatsApp Web 2.3000.x re-keys it; the original key is `protocolMessageKey`).
+  `Mapper` maps it back; never look a revoke up by its own id (issue #1). The fake page re-keys revokes the same way.
 - DB migrations in `store/Db.kt` are append-only; encrypted fields are AAD-bound to their row id.
 - ContentValues/bind args keep array references: wipe key material only after the write.
 - All DB/crypto work off the main thread (`LocalApi` and the engine use Dispatchers.IO / the ingest queue).

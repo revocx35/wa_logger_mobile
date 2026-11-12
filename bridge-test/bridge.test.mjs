@@ -158,6 +158,20 @@ test('revokes carry the original when it was seen, acks/remove/edits/chats are f
   assert.equal(rv.before.body, 'secret');
   assert.equal(rv.before.id._serialized, `false_${CHAT}_R1`);
 
+  // WhatsApp Web 2.3000.x re-keys the model in place: new stanza id, original key in protocolMessageKey (issue #1).
+  const k = msg('K1', { body: 'rekeyed secret' });
+  env.Msg.add(k);
+  await until(env, (x) => x.t === 'ev' && x.ev === 'message' && x.msg.id.id === 'K1');
+  k.protocolMessageKey = k.id;
+  k.id = new MsgKey({ fromMe: false, remote: CHAT, id: 'REVOKESTANZA1' });
+  k.type = 'revoked';
+  k.body = undefined;
+  env.Msg.emit('change:type', k);
+  const rk = await until(env, (x) => x.t === 'ev' && x.ev === 'revoke' && x.after.id.id === 'REVOKESTANZA1');
+  assert.equal(rk.after.protocolMessageKey._serialized, `false_${CHAT}_K1`);
+  assert.equal(rk.before.body, 'rekeyed secret');
+  assert.equal(rk.before.id._serialized, `false_${CHAT}_K1`);
+
   const unseen = msg('R2', { type: 'revoked' });
   env.Msg.emit('change:type', unseen);
   const rv2 = await until(env, (x) => x.t === 'ev' && x.ev === 'revoke' && x.after.id.id === 'R2');

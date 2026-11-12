@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.revocx35.walmobile"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.3.1"
     }
 
     // F-Droid builds the release from source and publishes the GitHub APK only if both are identical

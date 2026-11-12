@@ -171,6 +171,12 @@ data class MappedMessage(
     val ack: Int?,
     val revoked: Boolean,
     val revokedBy: String?,
+    /**
+     * WhatsApp Web (2.3000.x) re-keys a message when it is deleted for everyone: the revoked model gets the revoke
+     * stanza's id and keeps the original key in `protocolMessageKey`. [id] is then the original key (the row we
+     * logged) and this is the re-keyed id, which must never become a row of its own. Null otherwise.
+     */
+    val revokeKey: String?,
     val editKey: String?,
     val editTs: Long?,
     val notifyName: String?,
@@ -233,9 +239,12 @@ private fun rawTypeOf(o: JsonObject): String = when (val t = o["type"]) {
 }
 
 fun mapMessage(raw: JsonObject): MappedMessage {
-    val idObj = raw["id"].obj() ?: JsonObject(emptyMap())
-    val id = msgKey(raw["id"]) ?: ""
     val rawType = rawTypeOf(raw)
+    val ownKey = msgKey(raw["id"])
+    val originalKey = if (rawType == "revoked") msgKey(raw["protocolMessageKey"])?.takeIf { it.contains('_') && it != ownKey } else null
+    val keyField = if (originalKey != null) raw["protocolMessageKey"] else raw["id"]
+    val idObj = keyField.obj() ?: JsonObject(emptyMap())
+    val id = originalKey ?: ownKey ?: ""
     val fromMe = idObj["fromMe"].truthy()
     val chatId = jid(idObj["remote"]) ?: (if (fromMe) jid(raw["to"]) else jid(raw["from"])) ?: "unknown@c.us"
     val isGroupish = chatId.endsWith("@g.us") || chatId == "status@broadcast" || chatId.endsWith("@broadcast")
@@ -364,6 +373,7 @@ fun mapMessage(raw: JsonObject): MappedMessage {
         ack = raw["ack"].num()?.toInt(),
         revoked = rawType == "revoked",
         revokedBy = if (rawType == "revoked") (if (raw["subtype"].str() == "admin") "admin" else "sender") else null,
+        revokeKey = if (originalKey != null) ownKey else null,
         editKey = editKey,
         editTs = raw["latestEditSenderTimestampMs"].num()?.toLong(),
         notifyName = raw["notifyName"].str(),

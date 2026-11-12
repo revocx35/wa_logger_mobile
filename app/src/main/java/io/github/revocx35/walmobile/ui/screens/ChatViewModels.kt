@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.revocx35.walmobile.core.ApiException
 import io.github.revocx35.walmobile.core.ChatKind
 import io.github.revocx35.walmobile.core.ChatSummary
 import io.github.revocx35.walmobile.core.Message
@@ -221,6 +222,9 @@ class ChatViewModel(private val session: Session, override val chatId: String, f
                 val i = messages.indexOfFirst { it.id == m.id }
                 messages = if (i >= 0) messages.toMutableList().also { it[i] = m } else sortMessages(messages + m)
                 if (appended && i < 0) _scroll.tryEmit(ChatScroll.Appended)
+            }.onFailure { e ->
+                // The row was removed (a leftover revoke stub, see Ingest.dropRekeyedStub).
+                if (e is ApiException && e.status == 404) messages = messages.filter { it.id != id }
             }
         }
     }

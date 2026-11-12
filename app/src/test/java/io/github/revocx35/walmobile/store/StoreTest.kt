@@ -193,6 +193,60 @@ class IngestTest {
         assertEquals(1, deleted.size)
     }
 
+    /** WhatsApp Web 2.3000.x re-keys a revoked message: new stanza id, the original key in protocolMessageKey (issue #1). */
+    private fun rekeyedRevoke(origId: String, revokeId: String, subtype: String = "sender"): JsonObject =
+        text(revokeId, "").with("type" to "\"revoked\"", "subtype" to "\"$subtype\"", "protocolMessageKey" to rid(origId))
+
+    @Test
+    fun rekeyedRevokeFlagsTheLoggedMessage(): Unit = runBlocking {
+        val deleted = mutableListOf<String>()
+        h.ingest.deletionListener = io.github.revocx35.walmobile.engine.DeletionListener { _, id -> deleted += id }
+        val id = h.ingest.message(text("R1", "keep me"), Source.Live)!!
+        h.ingest.revoke(rekeyedRevoke("R1", "REVOKE1"), null)
+        val row = h.repo.getMessage(id)!!
+        assertNotNull(row.deletedAt)
+        assertEquals("chat", row.type)
+        assertEquals("keep me", h.bodyOf(id))
+        assertNull("no separate 'deleted before it could be logged' stub", h.repo.getMessage("false_905551112233@c.us_REVOKE1"))
+        assertEquals(1L, h.repo.countMessages())
+        assertEquals(listOf(id), deleted)
+        // Reconcile / history seeing the re-keyed revoked message later changes nothing.
+        h.ingest.message(rekeyedRevoke("R1", "REVOKE1"), Source.Live)
+        h.ingest.message(rekeyedRevoke("R1", "REVOKE1"), Source.History)
+        assertEquals(1L, h.repo.countMessages())
+        assertEquals("keep me", h.bodyOf(id))
+        assertEquals(1, deleted.size)
+    }
+
+    @Test
+    fun rekeyedRevokeSeenFirstByReconcile(): Unit = runBlocking {
+        val id = h.ingest.message(text("R2", "seen live"), Source.Live)!!
+        h.ingest.message(rekeyedRevoke("R2", "REVOKE2", "admin"), Source.Live)
+        assertEquals("admin", h.repo.getMessage(id)!!.deletedBy)
+        assertEquals(1L, h.repo.countMessages())
+    }
+
+    @Test
+    fun rekeyedRevokeRecoversBeforeUnderTheOriginalId(): Unit = runBlocking {
+        h.ingest.revoke(rekeyedRevoke("R3", "REVOKE3"), text("R3", "only in before"))
+        val id = "false_905551112233@c.us_R3"
+        assertTrue(h.repo.getMessage(id)!!.deletedAt!! > 0)
+        assertEquals("only in before", h.bodyOf(id))
+        assertEquals(1L, h.repo.countMessages())
+    }
+
+    @Test
+    fun rekeyedRevokeRemovesStubsLeftByOlderVersions(): Unit = runBlocking {
+        val id = h.ingest.message(text("R4", "logged"), Source.Live)!!
+        // What 0.3.0 stored: a content-less stub under the revoke key, the original unflagged.
+        h.ingest.message(text("REVOKE4", "").with("type" to "\"revoked\"", "subtype" to "\"sender\""), Source.Live)
+        assertEquals(2L, h.repo.countMessages())
+        h.ingest.message(rekeyedRevoke("R4", "REVOKE4"), Source.Live)
+        assertNull(h.repo.getMessage("false_905551112233@c.us_REVOKE4"))
+        assertNotNull(h.repo.getMessage(id)!!.deletedAt)
+        assertEquals(1L, h.repo.countMessages())
+    }
+
     @Test
     fun recoversOriginalFromBefore(): Unit = runBlocking {
         h.ingest.revoke(text("D2", "").with("type" to "\"revoked\"", "subtype" to "\"sender\""), text("D2", "original text"))

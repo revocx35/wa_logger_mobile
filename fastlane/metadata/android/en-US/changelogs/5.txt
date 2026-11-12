@@ -1,0 +1,1 @@
+Fix: messages deleted for everyone are flagged on their logged copy again. WhatsApp Web now gives a deleted message a new id, so 0.3.0 showed a separate "deleted before it could be logged" bubble while the original stayed unflagged above it (#1). Those extra bubbles are removed automatically when WhatsApp shows the deletion again.

@@ -81,7 +81,10 @@ Injected at document start into `https://web.whatsapp.com` (main frame only) wit
   stalled "ready") → `authenticated`, install hooks, `ready {me}`, then "unavailable" presence now and every 4 min
   (the hidden page counts as visible and would otherwise show the owner online).
 * Events (`{t:'ev'}`): `message` (Msg `add` with `isNewMsg`; ciphertext first, then again once decrypted, placeholder
-  resend enabled), `revoke` (`change:type` → revoked; `before` from a 200-entry cache of recently seen messages),
+  resend enabled), `revoke` (`change:type` → revoked; `before` from a 200-entry cache of recently seen messages, looked
+  up by the original stanza id: WhatsApp Web 2.3000.x re-keys the revoked model in place, so `msg.id` is the original
+  chat/sender + the revoke stanza's id and the original key is `protocolMessageKey`; `Mapper` maps a `revoked` message
+  back to that key and `Ingest` drops content-less stubs older versions stored under the re-keyed id, issue #1),
   `revoke_me`, `edit` (texts omitted when they are thumbnails: `blob:true`), `ack`, `reactions` (observing
   `WAWebAddonReactionTableMode.reactionTableMode.bulkUpsert`), `chat_removed`, `chat_archived`.
 * Serialization: `ser()` picks the fields the mapper reads from `message.serialize()`, JIDs as strings, keys as

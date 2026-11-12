@@ -275,6 +275,13 @@ class Repo(private val helper: Db) : DataKeyStore {
         m.isStatus, m.ephemeralSec, m.ack, m.deletedAt, m.deletedBy, m.deletedForMeAt, m.editedAt, m.lastEditKey, m.source, m.capturedAt, m.updatedAt,
     ) == 1
 
+    /** Removes one message row with its edits and reactions (only used for content-less revoke stubs). */
+    fun deleteMessageRow(id: String) = transaction {
+        exec("DELETE FROM reactions WHERE message_id = ?", id)
+        exec("DELETE FROM message_edits WHERE message_id = ?", id)
+        exec("DELETE FROM messages WHERE id = ?", id)
+    }
+
     fun updateMessage(id: String, values: ContentValues) {
         for (k in values.keySet()) require(k in MESSAGE_UPDATABLE) { "message column not updatable: $k" }
         if (values.size() > 0) db.update("messages", values, "id = ?", arrayOf(id))

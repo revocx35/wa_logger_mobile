@@ -188,6 +188,9 @@ def main():
     img = ui.find(desc="Deniz kenarı", timeout=30)
     time.sleep(1)
     shot = ui.shot("06_chat_live")
+    # The fake re-keys revoked messages like WhatsApp Web 2.3000.x: one flagged bubble, no separate stub (issue #1).
+    if any(t and "deleted before it could be logged" in t for t in ui.texts()):
+        raise UiError("revoke not matched to the logged message: separate 'deleted before it could be logged' bubble")
     x, y = ui.center(img)
     rgb = pixel_at(shot, x, y)
     if abs(rgb[0] - 0) > 12 or abs(rgb[1] - 168) > 12 or abs(rgb[2] - 132) > 12:

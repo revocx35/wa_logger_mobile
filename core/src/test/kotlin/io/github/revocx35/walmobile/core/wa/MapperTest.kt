@@ -153,6 +153,22 @@ class MapperTest {
         assertTrue(m.revoked)
         assertEquals("sender", m.revokedBy)
         assertEquals("admin", mapMessage(base(""""id":${id(false, "g@g.us", "R2")},"type":"revoked","subtype":"admin"""")).revokedBy)
+        assertEquals(null, m.revokeKey)
+    }
+
+    @Test
+    fun rekeyedRevokeTargetsTheOriginalKey() {
+        // WhatsApp Web 2.3000.x: the revoked model has the revoke stanza's id, the original key in protocolMessageKey.
+        val m = mapMessage(base(""""id":${id(false, "g@g.us", "REV", "5@lid")},"type":"revoked","subtype":"admin","protocolMessageKey":${id(false, "g@g.us", "ORIG", "5@lid")}"""))
+        assertEquals("false_g@g.us_ORIG_5@lid", m.id)
+        assertEquals("false_g@g.us_REV_5@lid", m.revokeKey)
+        assertEquals("g@g.us", m.chatId)
+        assertEquals("5@lid", m.senderId)
+        assertTrue(m.revoked)
+        // protocolMessageKey on other types (edits etc.) never changes the id.
+        val chat = mapMessage(base(""""id":${id(false, "a@c.us", "C")},"type":"chat","body":"x","protocolMessageKey":${id(false, "a@c.us", "OTHER")}"""))
+        assertEquals("false_a@c.us_C", chat.id)
+        assertEquals(null, chat.revokeKey)
     }
 
     @Test

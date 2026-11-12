@@ -318,13 +318,22 @@
     voice: function (chatId, url) {
       return add(chatId, { type: 'ptt', mimetype: 'audio/wav', media: url, duration: 1 });
     },
+    // Like WAWebRevokeMsgAction (2.3000.x): the same model is re-keyed in place. The new key keeps the chat and
+    // sender but takes the revoke stanza's id; the original key moves to protocolMessageKey.
     revoke: function (id) {
       var m = Msg.get(id);
+      var old = m.id;
+      var key = new MsgKey({ fromMe: old.fromMe, remote: String(old.remote), id: nextId(), participant: old.participant ? String(old.participant) : null });
+      Msg.models.delete(String(old));
+      Msg.models.set(String(key), m);
+      m.id = key;
+      m.protocolMessageKey = old;
       m.type = 'revoked';
+      m.subtype = 'sender';
       m.body = undefined;
       m.caption = undefined;
       Msg.emit('change:type', m);
-      return 'revoked';
+      return String(key);
     },
     edit: function (id, body) {
       var m = Msg.get(id);
