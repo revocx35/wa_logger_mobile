@@ -22,6 +22,8 @@ The server version is https://github.com/revocx35/wa_logger (local checkout `/ro
 - A deleted-for-everyone message has a new id (WhatsApp Web 2.3000.x re-keys it; the original key is `protocolMessageKey`).
   `Mapper` maps it back; never look a revoke up by its own id (issue #1). The fake page re-keys revokes the same way.
 - DB migrations in `store/Db.kt` are append-only; encrypted fields are AAD-bound to their row id.
+- Storage controls (ARCHITECTURE §13): every new place that inserts messages must go through `Ingest.message` (or check
+  `Ingest.notKept`), or messages the owner deleted / that are past retention come back with the next history sync.
 - ContentValues/bind args keep array references: wipe key material only after the write.
 - All DB/crypto work off the main thread (`LocalApi` and the engine use Dispatchers.IO / the ingest queue).
 - The fake WhatsApp Web (`app/src/debug/assets/fakewa`) exists only in debug/e2e builds and only works when
@@ -29,6 +31,7 @@ The server version is https://github.com/revocx35/wa_logger (local checkout `/ro
 - Commits end with the Co-Authored-By trailer. CI must stay green.
 
 ## Commands
+- Gradle needs JDK 21 (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`; the LXC's default java is a JDK 25 runtime).
 - JVM + Robolectric tests, lint, APK: `./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`
 - Bridge: `node --test bridge-test/*.test.mjs` (a directory argument doesn't work with this Node).
 - Emulator e2e (no WhatsApp account needed): `scripts/emulator.sh start`, then `./gradlew :app:assembleDebug` and

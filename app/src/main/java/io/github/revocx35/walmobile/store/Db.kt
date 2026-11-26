@@ -166,6 +166,16 @@ class Db(context: Context, name: String? = NAME) : SQLiteOpenHelper(context, nam
               updated_at INTEGER NOT NULL
             )
             """,
+            // Storage controls: messages the owner deleted from the log are remembered by id (WhatsApp's own message key,
+            // already stored in clear as messages.id) so history sync doesn't log them again; messages_ts serves the
+            // retention sweep.
+            """
+            CREATE TABLE removed_messages (
+              id TEXT PRIMARY KEY,
+              removed_at INTEGER NOT NULL
+            );
+            CREATE INDEX messages_ts ON messages (ts)
+            """,
         )
     }
 }

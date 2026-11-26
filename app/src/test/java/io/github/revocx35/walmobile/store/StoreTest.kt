@@ -21,6 +21,7 @@ import io.github.revocx35.walmobile.security.Vault
 import io.github.revocx35.walmobile.security.VaultState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -654,4 +655,92 @@ class LocalApiTest {
         assertEquals("x.png", opened.filename)
         assertTrue(opened.reader.use { it.readAll() }.contentEquals(data))
     }
+
+    private fun nowSec(daysAgo: Int) = (System.currentTimeMillis() - daysAgo * 86_400_000L) / 1000
+
+    private suspend fun attachFile(id: String, type: String): String {
+        val w = h.vault.writer()!!
+        val p = h.files.begin(w)
+        p.writer.write(ByteArray(1000) { 7 })
+        val (mediaId, _) = h.files.finish(p, w, "message", "image/jpeg", null)
+        h.repo.updateMessage(id, values("type" to type, "media_id" to mediaId, "media_status" to "downloaded"))
+        return h.repo.getMedia(mediaId)!!.path
+    }
+
+    private fun fileExists(rel: String) = File(h.mediaDir, rel).exists()
+
+    @Test
+    fun deletesMessagesFromTheLogAndNeverLogsThemAgain(): Unit = runBlocking {
+        h.ingest.message(text("D1", "keep me", "\"t\":${nowSec(3)}"), Source.Live)
+        h.ingest.message(text("D2", "delete me", "\"t\":${nowSec(2)}"), Source.Live)
+        val d2 = "false_${CHAT}_D2"
+        val path = attachFile(d2, "image")
+        assertTrue(fileExists(path))
+        val seen = mutableListOf<ServerEvent>()
+        val job = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launchCollect(h, seen)
+        assertEquals(1, h.local.deleteMessages(listOf(d2, "false_${CHAT}_MISSING")))
+        job.cancel()
+        assertNull(h.repo.getMessage(d2))
+        assertFalse(fileExists(path))
+        assertTrue(seen.contains(ServerEvent.MessageUpdate(CHAT, d2, "deleted")))
+        assertEquals(listOf("keep me"), h.local.messages(CHAT).messages.map { it.text })
+        // History sync, a late edit or revoke of the same message: it stays deleted.
+        h.ingest.message(text("D2", "delete me", "\"t\":${nowSec(2)}"), Source.History)
+        h.ingest.revoke(text("D2", "", "\"t\":${nowSec(2)},\"type\":\"revoked\",\"subtype\":\"sender\""), null)
+        assertNull(h.repo.getMessage(d2))
+        try {
+            h.local.deleteMessages(emptyList())
+            fail("empty list accepted")
+        } catch (e: ApiException) {
+            assertEquals("validation", e.code)
+        }
+        // A wipe forgets the deleted ids.
+        assertTrue(h.repo.isMessageRemoved(d2))
+        h.repo.wipeLoggedData()
+        assertFalse(h.repo.isMessageRemoved(d2))
+    }
+
+    @Test
+    fun retentionDeletesOldMessagesAndOldPhotoFiles(): Unit = runBlocking {
+        h.ingest.message(text("OLD", "old", "\"t\":${nowSec(40)}"), Source.Live)
+        h.ingest.message(text("MID", "middle", "\"t\":${nowSec(10)}"), Source.Live)
+        h.ingest.message(text("NEW", "new", "\"t\":${nowSec(1)}"), Source.Live)
+        h.ingest.message(text("DOC", "doc", "\"t\":${nowSec(10)}"), Source.Live)
+        val old = attachFile("false_${CHAT}_OLD", "video")
+        val mid = attachFile("false_${CHAT}_MID", "image")
+        val new = attachFile("false_${CHAT}_NEW", "image")
+        val doc = attachFile("false_${CHAT}_DOC", "document")
+        val r = Retention(h.repo, h.settings, h.events, h.files, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined))
+        assertEquals(Retention.Result(0, 0), r.sweep())
+
+        h.local.updateSettings(SettingsPatch(messageRetentionDays = 30, mediaRetentionDays = 7))
+        assertEquals(Retention.Result(1, 1), r.sweep())
+        assertNull(h.repo.getMessage("false_${CHAT}_OLD"))
+        assertFalse(fileExists(old))
+        assertFalse(fileExists(mid))
+        assertTrue(fileExists(new))
+        assertTrue(fileExists(doc))
+        val m = h.local.message("false_${CHAT}_MID")
+        assertEquals("middle", m.text)
+        assertEquals(io.github.revocx35.walmobile.core.MediaStatus.Expired, m.media?.status)
+
+        // History older than the cutoffs: not logged / not downloaded.
+        h.ingest.message(text("OLD", "old", "\"t\":${nowSec(40)}"), Source.History)
+        assertNull(h.repo.getMessage("false_${CHAT}_OLD"))
+        val photo = "\"type\":\"image\",\"mimetype\":\"image/jpeg\",\"directPath\":\"/x\",\"mediaKey\":\"k\",\"size\":10"
+        h.ingest.message(text("PIC1", "", "\"t\":${nowSec(20)},$photo"), Source.History)
+        h.ingest.message(text("PIC2", "", "\"t\":${nowSec(1)},$photo"), Source.History)
+        assertEquals("expired", h.repo.getMessage("false_${CHAT}_PIC1")?.mediaStatus)
+        assertEquals("pending", h.repo.getMessage("false_${CHAT}_PIC2")?.mediaStatus)
+
+        try {
+            h.local.updateSettings(SettingsPatch(mediaRetentionDays = 3651))
+            fail("out of range accepted")
+        } catch (e: ApiException) {
+            assertEquals("validation", e.code)
+        }
+    }
 }
+
+private fun kotlinx.coroutines.CoroutineScope.launchCollect(h: Harness, into: MutableList<ServerEvent>) =
+    launch { h.events.events.collect { into += it } }

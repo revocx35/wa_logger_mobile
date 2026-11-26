@@ -12,3 +12,6 @@ The full agent notes live in [CLAUDE.md](CLAUDE.md) (rules, commands, environmen
 - **0.3.0 parity with the server:** disappearing flag, reload resume, gallery auto-save (`media/AutoSave.kt`), multi-select
   save, blocked contacts (`engine/BlockList.kt`) — ARCHITECTURE §12 lists what is deliberately not ported.
 - **Calls** are impossible in Android WebView (no SharedArrayBuffer; ARCHITECTURE §11).
+- **0.4.0 storage controls** (ARCHITECTURE §13): retention for messages and for photos/videos (`store/Retention.kt`, hourly +
+  on change) and deleting messages from the log (`LocalApi.deleteMessages`, `removed_messages` tombstones). Anything that inserts
+  messages must go through `Ingest.message`/`Ingest.notKept`. Gradle needs JDK 21 on this LXC.

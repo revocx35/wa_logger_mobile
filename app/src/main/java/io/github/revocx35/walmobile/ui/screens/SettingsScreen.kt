@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -49,7 +51,9 @@ import io.github.revocx35.walmobile.BuildConfig
 import io.github.revocx35.walmobile.core.ApiException
 import io.github.revocx35.walmobile.core.AuditEntry
 import io.github.revocx35.walmobile.core.Settings
+import io.github.revocx35.walmobile.core.RETENTION_PRESETS
 import io.github.revocx35.walmobile.core.SettingsPatch
+import io.github.revocx35.walmobile.core.retentionLabel
 import io.github.revocx35.walmobile.core.WaStatus
 import io.github.revocx35.walmobile.core.userMessage
 import io.github.revocx35.walmobile.data.AppGraph
@@ -415,7 +419,12 @@ private fun formatBytes(b: Long): String = when {
 @Composable
 private fun StorageSection(d: SettingsDeps) {
     var info by remember { mutableStateOf<StorageInfo?>(null) }
-    LaunchedEffect(Unit) { info = runCatching { d.api.storage() }.getOrNull() }
+    var s by remember { mutableStateOf<Settings?>(null) }
+    val op = rememberOp()
+    LaunchedEffect(Unit) {
+        info = runCatching { d.api.storage() }.getOrNull()
+        s = runCatching { d.api.settings() }.getOrNull()
+    }
     SectionCard("Storage") {
         val i = info
         if (i == null) {
@@ -423,6 +432,62 @@ private fun StorageSection(d: SettingsDeps) {
         } else {
             Text("${i.messages} messages · ${i.mediaFiles} media files", style = WaType.base, color = Wa.colors.text)
             MutedText("Media ${formatBytes(i.mediaBytes)} · database ${formatBytes(i.databaseBytes)}", style = WaType.small)
+        }
+        val cur = s ?: return@SectionCard
+        fun save(p: SettingsPatch) = op.run("Saved.") {
+            s = d.api.updateSettings(p)
+            // The sweep starts right away; show the totals after it.
+            kotlinx.coroutines.delay(1500)
+            info = runCatching { d.api.storage() }.getOrNull()
+        }
+        Column(Modifier.widthIn(max = 520.dp).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            RetentionPicker(
+                "Keep messages",
+                "Older messages are deleted from the log together with their photos, videos and files. Older history is not imported again.",
+                cur.messageRetentionDays,
+            ) { save(SettingsPatch(messageRetentionDays = it)) }
+            RetentionPicker(
+                "Keep photos and videos",
+                "Older photos, videos, GIFs and stickers are deleted; the message, its caption and the small preview stay.",
+                cur.mediaRetentionDays,
+            ) { save(SettingsPatch(mediaRetentionDays = it)) }
+        }
+        MutedText(
+            "Old data is cleaned up every hour. To delete single messages, long-press a message → Delete from log, or Select messages to delete. Messages deleted here are only removed from this log, not from WhatsApp, and are not logged again.",
+            style = WaType.small,
+        )
+        ErrorNote(op.error)
+        OkNote(op.ok)
+    }
+}
+
+/** One retention picker (presets as chips): shortening it asks once more, it deletes data now. */
+@Composable
+internal fun RetentionPicker(label: String, help: String, value: Int, onSave: (Int) -> Unit) {
+    var draft by remember(value) { mutableStateOf(value) }
+    val options = if (value in RETENTION_PRESETS) RETENTION_PRESETS else (RETENTION_PRESETS + value).sorted()
+    val deletes = draft != 0 && (value == 0 || draft < value)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = WaType.small, color = Wa.colors.text2)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (d in options) {
+                WaButton(retentionLabel(d), { draft = d }, tiny = true, style = if (d == draft) BtnStyle.Primary else BtnStyle.Ghost)
+            }
+        }
+        MutedText(help, style = WaType.small)
+        if (draft != value) {
+            if (deletes) {
+                Text(
+                    "Everything older than ${retentionLabel(draft).lowercase()} will be deleted from the log now. This can’t be undone.",
+                    style = WaType.small,
+                    color = Wa.colors.text,
+                    modifier = Modifier.fillMaxWidth().background(Wa.colors.warnBg, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WaButton(if (deletes) "Delete and save" else "Save", { onSave(draft) }, tiny = true, style = if (deletes) BtnStyle.Danger else BtnStyle.Primary)
+                WaButton("Cancel", { draft = value }, tiny = true, style = BtnStyle.Ghost)
+            }
         }
     }
 }

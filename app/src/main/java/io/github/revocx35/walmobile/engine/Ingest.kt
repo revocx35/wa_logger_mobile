@@ -2,6 +2,8 @@ package io.github.revocx35.walmobile.engine
 
 import io.github.revocx35.walmobile.core.ChatKind
 import io.github.revocx35.walmobile.core.MessageType
+import io.github.revocx35.walmobile.core.RETAINED_MEDIA_TYPES
+import io.github.revocx35.walmobile.core.retentionCutoff
 import io.github.revocx35.walmobile.core.ServerEvent
 import io.github.revocx35.walmobile.core.WaJson
 import io.github.revocx35.walmobile.core.crypto.DataWriter
@@ -181,7 +183,18 @@ class Ingest(
         !m.downloadable -> "unavailable"
         (m.media?.size ?: 0) > settings.mediaMaxBytes() -> "too_large"
         source == Source.History && !settings.get().downloadHistoryMedia -> "skipped"
+        m.type.db() in RETAINED_MEDIA_TYPES && retentionCutoff(settings.get().mediaRetentionDays, now())?.let { m.ts < it } == true -> "expired"
         else -> "pending"
+    }
+
+    /**
+     * Storage controls: the owner deleted this message from the log (it must not come back with the next history sync),
+     * or it is older than the message retention setting (the sweep would delete it again).
+     */
+    private fun notKept(id: String, ts: Long): Boolean {
+        val cutoff = retentionCutoff(settings.get().messageRetentionDays, now())
+        if (cutoff != null && ts > 0 && ts < cutoff) return true
+        return repo.isMessageRemoved(id)
     }
 
     private fun newRow(m: MappedMessage, source: Source, t: Long, w: DataWriter): MessageRow = MessageRow(
@@ -223,6 +236,7 @@ class Ingest(
         val m = mapMessage(raw)
         if (m.skip) return null
         if (m.isStatus && !settings.get().logStatus) return null
+        if (notKept(m.id, m.ts)) return null
         if (blockedMessage(m.chatId, m.senderId, m.fromMe)) return null
 
         ensureChat(m.chatId)
@@ -382,6 +396,7 @@ class Ingest(
         writer ?: return
         val after = mapMessage(afterRaw)
         if (after.id.isEmpty()) return
+        if (notKept(after.id, after.ts)) return
         if (blockedMessage(after.chatId, after.senderId, after.fromMe)) return
         val t = now()
         dropRekeyedStub(after)

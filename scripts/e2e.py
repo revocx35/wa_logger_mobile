@@ -282,6 +282,31 @@ def main():
         raise UiError("own deleted message not flagged")
     ui.shot("07a_sent")
 
+    step("storage: delete a message from the log, and two more by selecting them")
+    long_press(contains="Selam edited")
+    ui.tap(text="Delete from log…")
+    ui.tap(text="Yes, delete from the log")
+    time.sleep(2)
+    hide_keyboard()
+    if any(t and "Selam edited" in t for t in ui.texts()):
+        raise UiError("message deleted from the log is still shown")
+    long_press(contains="eply from the app")
+    ui.tap(text="Select messages to delete")
+    expect_text(text="1 selected", timeout=10)
+    ui.tap(contains="Deniz kenar")
+    expect_text(text="2 selected", timeout=10)
+    ui.shot("07b_select_delete")
+    ui.tap(text="Delete…")
+    ui.tap(text="Delete 2")
+    time.sleep(2)
+    left = " ".join(t or "" for t in ui.texts())
+    if "eply from the app" in left or "Deniz kenar" in left:
+        raise UiError("selected messages still shown after deleting them")
+    # Only the log copy: nothing more was sent to WhatsApp for these deletions.
+    ops = [o["op"] for o in page("fake.sent()")]
+    if ops.count("revoke") != 1:
+        raise UiError(f"deleting from the log touched WhatsApp: {ops}")
+
     step("Deleted tab and search")
     ui.back()
     ui.tap(text="Deleted")
@@ -384,6 +409,8 @@ def main():
     ui.tap(contains="I have stored my recovery key")
     ui.tap(text="Continue")
     ui.tap(text="Settings", timeout=30)
+    ui.scroll_to(text="Keep photos and videos")
+    ui.shot("11a_storage")
     ui.scroll_to(text="Wipe all logged data")
     fields = ui.find_all(cls="android.widget.EditText")  # the Danger zone's password field is the last one
     ui.tap_xy(*ui.center(fields[-1]))

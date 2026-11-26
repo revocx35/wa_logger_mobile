@@ -165,6 +165,8 @@ enum class MediaStatus {
     @SerialName("skipped") Skipped,
     @SerialName("view_once") ViewOnce,
     @SerialName("unavailable") Unavailable,
+    /** The file was removed by the photo/video retention setting (Settings → Storage). */
+    @SerialName("expired") Expired,
 }
 
 @Serializable
@@ -284,6 +286,10 @@ data class Settings(
     val historyPerChat: Int = 200,
     /** Mark a chat as read on WhatsApp when it is opened here. */
     val readReceipts: Boolean = false,
+    /** Storage: delete logged messages (with their media) older than this many days; 0 = keep forever. */
+    val messageRetentionDays: Int = 0,
+    /** Storage: delete photo/video/GIF/sticker files older than this many days (the message stays); 0 = keep forever. */
+    val mediaRetentionDays: Int = 0,
 )
 
 @Serializable
@@ -293,7 +299,25 @@ data class SettingsPatch(
     val mediaMaxMb: Int? = null,
     val historyPerChat: Int? = null,
     val readReceipts: Boolean? = null,
+    val messageRetentionDays: Int? = null,
+    val mediaRetentionDays: Int? = null,
 )
+
+/** Retention presets (days; 0 = keep forever), the same as the wa_logger server's Settings → Storage. */
+val RETENTION_PRESETS: List<Int> = listOf(0, 1, 7, 14, 30, 90, 180, 365, 730)
+
+fun retentionLabel(days: Int): String = when {
+    days <= 0 -> "Keep forever"
+    days == 1 -> "1 day"
+    days % 365 == 0 -> if (days == 365) "1 year" else "${days / 365} years"
+    else -> "$days days"
+}
+
+/** Oldest message time (ms) still kept, or null when that kind of data is kept forever. */
+fun retentionCutoff(days: Int, now: Long): Long? = if (days > 0) now - days * 86_400_000L else null
+
+/** Message types whose file the photo/video retention removes (the message, caption and thumbnail stay). */
+val RETAINED_MEDIA_TYPES: List<String> = listOf("image", "video", "gif", "sticker")
 
 /** auto: photo/video/audio by type · document: as a file · voice: voice note (Ogg/Opus) · gif: video as GIF */
 @Serializable

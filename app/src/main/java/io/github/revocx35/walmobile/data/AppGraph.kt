@@ -66,7 +66,9 @@ class AppGraph(val context: Context, val diagnostics: Diagnostics) {
     init {
         engine.media.tee = io.github.revocx35.walmobile.media.AutoSaver(context.applicationContext, prefs)
     }
-    val api = LocalApi(repo, vault, settings, engine, events, files, engine.blocks)
+    /** Storage controls: deletes data older than the retention settings (hourly and on change). */
+    val retention = io.github.revocx35.walmobile.store.Retention(repo, settings, events, files, scope).also { it.start() }
+    val api = LocalApi(repo, vault, settings, engine, events, files, engine.blocks, retention)
     val sender = io.github.revocx35.walmobile.engine.LocalSender(
         context.applicationContext,
         { op, args, timeout -> engine.pageCall(op, args, timeout) },

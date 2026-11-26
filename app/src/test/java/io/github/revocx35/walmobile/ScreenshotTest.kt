@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.revocx35.walmobile.core.ChatSummary
 import io.github.revocx35.walmobile.core.DeletedFeedItem
@@ -139,6 +140,30 @@ class ScreenshotTest {
     @Test
     fun phoneChatDark() = shot("phone_chat_ali_dark", dark = true) {
         ChatPane(FakeChat(aliSummary, SampleData.aliChat), {}, false, NoMessageActions, Modifier.fillMaxSize())
+    }
+
+    @Test
+    fun phoneMessageMenuDelete() = shot("phone_message_menu_delete") {
+        val msg = SampleData.aliChat.last { !it.fromMe && it.text != null }
+        io.github.revocx35.walmobile.ui.components.MessageMenu(msg, false, {}, {}, {}, {}, null, {}, onDeleteFromLog = {}, onSelectToDelete = {})
+    }
+
+    @Test
+    fun phoneChatSelectingToDelete() = shot("phone_chat_selecting_delete") {
+        val selection = io.github.revocx35.walmobile.ui.MessageSelection().apply {
+            val texts = SampleData.aliChat.filter { it.text != null }
+            start(io.github.revocx35.walmobile.ui.MessageSelection.Mode.Delete, texts.last())
+            toggle(texts[texts.size - 2])
+        }
+        ChatPane(FakeChat(aliSummary, SampleData.aliChat), {}, false, NoMessageActions, Modifier.fillMaxSize(), selection = selection)
+    }
+
+    @Test
+    fun phoneStorageSettings() = shot("phone_settings_storage") {
+        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+            io.github.revocx35.walmobile.ui.screens.RetentionPicker("Keep messages", "Older messages are deleted from the log.", 0) {}
+            io.github.revocx35.walmobile.ui.screens.RetentionPicker("Keep photos and videos", "Older photos and videos are deleted.", 30) {}
+        }
     }
 
     @Test

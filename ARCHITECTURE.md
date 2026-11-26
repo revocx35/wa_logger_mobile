@@ -147,7 +147,8 @@ deleted feed, bounded decrypt-and-scan search), so the UI code needed almost no 
 seeking). "Save" and "Open with" decrypt to the chosen file / a cache copy deleted at next start.
 
 Migrations: 1 = base schema, 2 = `messages.ephemeral_sec` (disappearing-messages timer, `Message.disappearingSec`),
-3 = `blocked_contacts(phone)` and `contact_directory(id, phone)` (number behind a LID id, so the engine matches without the key).
+3 = `blocked_contacts(phone)` and `contact_directory(id, phone)` (number behind a LID id, so the engine matches without the key),
+4 = `removed_messages(id, removed_at)` and index `messages_ts(ts)` (storage controls, §13).
 
 ## 8. UI
 
@@ -165,7 +166,7 @@ storage, security log, wipe, app. `FLAG_SECURE` by default. Notification taps op
 * `node --test bridge-test/*.test.mjs` — the bridge against fake WhatsApp Web modules (QR payload, pairing, ready,
   serialization, revoke/edit/ack/reactions, ciphertext, page API, media slices, presence).
 * `scripts/e2e.py` — emulator, UI Automator + DevTools, against the fake WhatsApp Web (`fake_wa` debug preference;
-  only `debug` and `e2e` builds contain it and honor it, `BuildConfig.FAKE_WA`): 14 steps from setup to wipe, including
+  only `debug` and `e2e` builds contain it and honor it, `BuildConfig.FAKE_WA`): 18 steps from setup to wipe, including
   process kill, lock, notifications and the live page hand-off. `e2e` = the release build (R8) + fake page, debuggable.
 * Real WhatsApp Web on the emulator was verified up to linking: module access, states, QR payload identical to the
   page's own, background survival. Linked behavior relies on the same WhatsApp Web internals the wa_logger server
@@ -232,3 +233,22 @@ calls and call recording (no calls in WebView, §11), ZIP download (replaced by 
   matched by phone digits (a LID is resolved once via the page's contact info and remembered in `contact_directory`; an
   unresolvable LID counts as blocked for 5 minutes). Already-logged messages stay; later updates to them are ignored.
   Settings → Blocked contacts (`LocalApi.blockCandidates/setBlocked`) lists logged one-to-one chats by name.
+
+## 13. Storage controls (0.4.0)
+
+Port of the wa_logger server's storage controls (its ARCHITECTURE.md §4 "Storage controls"), same rules and texts:
+* Settings → Storage: `Settings.messageRetentionDays` / `mediaRetentionDays` (days, 0 = keep forever, the default;
+  `RETENTION_PRESETS` 1 day … 2 years; validated 0..3650 in `SettingsStore`). `RetentionPicker` asks "Delete and save" when a
+  change deletes data.
+* `store/Retention.kt` (created and started in `AppGraph`): 30 s after start, every hour, and after every settings change
+  (`LocalApi.updateSettings` → `trigger`). Deletes messages older than the message cutoff with their edits, reactions and media
+  files (`Repo.removeMessages`), and removes the files of photo/video/GIF/sticker messages older than the media cutoff
+  (`Repo.expireMessageMedia`: media status `expired`, `MediaStatus.Expired`, not retryable; text, caption and thumbnail stay).
+  Needs no key, so it runs while the app is locked. Audit: `retention_sweep` with counts.
+* History doesn't bring it back: `Ingest.notKept` drops messages older than the message cutoff (and revokes of them), and
+  `mediaStatusFor` marks old photos/videos `expired` instead of queuing them. `MediaQueue` throws away a finished download
+  whose row is no longer `pending`.
+* Deleting single messages: long-press → *Delete from log…* (second tap confirms) or *Select messages to delete*
+  (`MessageSelection.Mode.Delete`, header *Delete…* → *Delete N*) → `LocalApi.deleteMessages` (1..500 ids). The ids go to
+  `removed_messages` so history sync, edits and revokes never log them again; WhatsApp itself is not touched. A wipe clears the
+  table. Audit: `messages_deleted` with the count only.

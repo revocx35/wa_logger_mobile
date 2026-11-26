@@ -64,12 +64,16 @@ class SettingsStore(private val repo: Repo) {
         val cur = get()
         p.mediaMaxMb?.let { if (it !in 1..2000) throw ApiException.validation("Media size must be between 1 and 2000 MB.") }
         p.historyPerChat?.let { if (it !in 0..5000) throw ApiException.validation("Messages per chat must be between 0 and 5000.") }
+        p.messageRetentionDays?.let { if (it !in 0..3650) throw ApiException.validation("Keep messages for 0 to 3650 days.") }
+        p.mediaRetentionDays?.let { if (it !in 0..3650) throw ApiException.validation("Keep photos and videos for 0 to 3650 days.") }
         val next = cur.copy(
             logStatus = p.logStatus ?: cur.logStatus,
             downloadHistoryMedia = p.downloadHistoryMedia ?: cur.downloadHistoryMedia,
             mediaMaxMb = p.mediaMaxMb ?: cur.mediaMaxMb,
             historyPerChat = p.historyPerChat ?: cur.historyPerChat,
             readReceipts = p.readReceipts ?: cur.readReceipts,
+            messageRetentionDays = p.messageRetentionDays ?: cur.messageRetentionDays,
+            mediaRetentionDays = p.mediaRetentionDays ?: cur.mediaRetentionDays,
         )
         repo.setState(KEY, WaJson.encodeToString(Settings.serializer(), next))
         cached = next
@@ -103,6 +107,8 @@ class LocalApi(
     private val events: EventBus,
     private val media: MediaFiles,
     private val blocks: io.github.revocx35.walmobile.engine.BlockList = io.github.revocx35.walmobile.engine.BlockList(repo),
+    /** Storage controls: the retention sweep, started again whenever the settings change. */
+    private val retention: Retention? = null,
 ) {
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 
@@ -218,7 +224,25 @@ class LocalApi(
 
     suspend fun updateSettings(patch: SettingsPatch): Settings = io {
         vault.reader()
-        settingsStore.update(patch).also { repo.audit("settings_changed") }
+        settingsStore.update(patch).also {
+            repo.audit("settings_changed")
+            retention?.trigger()
+        }
+    }
+
+    /**
+     * Storage control: deletes messages from the log only (not from WhatsApp), with their edits, reactions and media
+     * files. Their ids are remembered so history sync doesn't log them again. At most 500 per call.
+     */
+    suspend fun deleteMessages(ids: List<String>): Int = io {
+        vault.reader()
+        if (ids.isEmpty() || ids.size > 500) throw ApiException.validation("Delete 1 to 500 messages at a time.")
+        val out = repo.removeMessages(ids, System.currentTimeMillis(), remember = true)
+        for (p in out.paths) media.delete(p)
+        repo.audit("messages_deleted", "${out.messages.size}")
+        for ((id, chatId) in out.messages) events.emit(ServerEvent.MessageUpdate(chatId, id, "deleted"))
+        for (chatId in out.messages.map { it.second }.toSet()) events.emit(ServerEvent.ChatUpdate(chatId))
+        out.messages.size
     }
 
     /** A contact that can be excluded from logging. */

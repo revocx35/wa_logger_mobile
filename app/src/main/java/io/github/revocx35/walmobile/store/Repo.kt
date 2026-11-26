@@ -401,7 +401,64 @@ class Repo(private val helper: Db) : DataKeyStore {
 
     fun wipeLoggedData(): List<String> = transaction {
         val paths = allMediaPaths()
-        for (t in listOf("reactions", "message_edits", "messages", "contacts", "chats", "media", "contact_directory")) db.execSQL("DELETE FROM $t")
+        for (t in listOf("reactions", "message_edits", "messages", "contacts", "chats", "media", "contact_directory", "removed_messages")) db.execSQL("DELETE FROM $t")
+        paths
+    }
+
+    /* --------------------------------------------------------- storage controls */
+
+    /** What [removeMessages] deleted: (message id, chat id) pairs and the media files to delete. */
+    data class Removed(val messages: List<Pair<String, String>>, val paths: List<String>)
+
+    /**
+     * Deletes messages from the log with their edits, reactions and media rows (port of the server's `removeMessages`).
+     * With [remember] the ids go to `removed_messages` so a later history sync doesn't log them again.
+     */
+    fun removeMessages(ids: Collection<String>, now: Long, remember: Boolean): Removed = transaction {
+        val removed = ArrayList<Pair<String, String>>()
+        val paths = ArrayList<String>()
+        for (id in ids.distinct()) {
+            if (remember) exec("INSERT OR REPLACE INTO removed_messages (id, removed_at) VALUES (?, ?)", id, now)
+            val row = query("SELECT chat_id, media_id FROM messages WHERE id = ?", id) { c ->
+                if (c.moveToFirst()) c.getString(0) to (if (c.isNull(1)) null else c.getLong(1)) else null
+            } ?: continue
+            exec("DELETE FROM reactions WHERE message_id = ?", id)
+            exec("DELETE FROM message_edits WHERE message_id = ?", id)
+            exec("DELETE FROM messages WHERE id = ?", id)
+            row.second?.let { mid ->
+                getMedia(mid)?.let { paths += it.path }
+                exec("DELETE FROM media WHERE id = ?", mid)
+            }
+            removed += id to row.first
+        }
+        Removed(removed, paths)
+    }
+
+    /** The owner deleted this message from the log: it must not be logged again. */
+    fun isMessageRemoved(id: String): Boolean = query("SELECT 1 FROM removed_messages WHERE id = ?", id) { it.moveToFirst() }
+
+    /** Ids of messages sent before [cutoff] (ms), oldest first. */
+    fun messageIdsBefore(cutoff: Long, limit: Int): List<String> =
+        query("SELECT id FROM messages WHERE ts < ? ORDER BY ts LIMIT ?", cutoff, limit) { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+
+    /** Photos/videos (by message type) sent before [cutoff] that still have a file or are still queued: (id, chat id). */
+    fun mediaMessagesBefore(cutoff: Long, types: Collection<String>, limit: Int): List<Pair<String, String>> = query(
+        "SELECT id, chat_id FROM messages WHERE ts < ? AND type IN (${marks(types.size)}) " +
+            "AND (media_id IS NOT NULL OR media_status IN ('pending', 'failed', 'skipped')) ORDER BY ts LIMIT ?",
+        cutoff, *types.toTypedArray(), limit,
+    ) { c -> buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) } }
+
+    /** Removes the media files of these messages and marks them 'expired'. Returns media paths to delete. */
+    fun expireMessageMedia(ids: Collection<String>, now: Long): List<String> = transaction {
+        val paths = ArrayList<String>()
+        for (id in ids) {
+            val mid = query("SELECT media_id FROM messages WHERE id = ?", id) { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
+            exec("UPDATE messages SET media_id = NULL, media_status = 'expired', updated_at = ? WHERE id = ?", now, id)
+            if (mid != null) {
+                getMedia(mid)?.let { paths += it.path }
+                exec("DELETE FROM media WHERE id = ?", mid)
+            }
+        }
         paths
     }
 
